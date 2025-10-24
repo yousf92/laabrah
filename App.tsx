@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
-import 'firebase/compat/storage';
+// import 'firebase/compat/storage'; // Removed Firebase Storage
 import { 
     // getAuth, // v9
     // createUserWithEmailAndPassword, // v9
@@ -14,6 +14,9 @@ import {
     // sendEmailVerification, // v9
     // User // v9
 } from 'firebase/auth';
+
+// --- Global Declarations ---
+declare const uploadcare: any; // To inform TypeScript about the global uploadcare object
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
@@ -30,7 +33,7 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const auth = firebase.auth();
-const storage = firebase.storage();
+// const storage = firebase.storage(); // Removed Firebase Storage
 
 // --- Types and Interfaces ---
 type View = 'main' | 'login' | 'signup' | 'forgot-password';
@@ -517,46 +520,43 @@ const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
 // --- Settings View ---
 const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }> = ({ user, handleSignOut }) => {
     const [displayName, setDisplayName] = useState(user.displayName || '');
-    const [photoFile, setPhotoFile] = useState<File | null>(null);
     const [photoPreview, setPhotoPreview] = useState<string | null>(user.photoURL || null);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
+    
     useEffect(() => {
         // Update local state if user object changes from parent
         setDisplayName(user.displayName || '');
         setPhotoPreview(user.photoURL || null);
     }, [user]);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            setPhotoFile(file);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setPhotoPreview(reader.result as string);
-            };
-            reader.readAsDataURL(file);
-        }
+    const handleImageUpload = () => {
+        const dialog = uploadcare.openDialog(null, {
+            publicKey: 'e5cdcd97e0e41d6aa881',
+            imagesOnly: true,
+            crop: "1:1",
+        });
+
+        dialog.done((file: any) => {
+            file.promise().done((fileInfo: any) => {
+                setPhotoPreview(fileInfo.cdnUrl);
+            });
+        });
     };
 
     const handleSaveProfile = async () => {
+        if (displayName === (user.displayName || '') && photoPreview === (user.photoURL || null)) {
+            setMessage('لم يتم إجراء أي تغييرات.');
+            setTimeout(() => setMessage(''), 3000);
+            return;
+        }
+
         setLoading(true);
         setMessage('');
         try {
-            let photoURL = user.photoURL;
-
-            if (photoFile) {
-                const filePath = `profile_pictures/${user.uid}/${Date.now()}_${photoFile.name}`;
-                const fileRef = storage.ref(filePath);
-                const uploadTask = await fileRef.put(photoFile);
-                photoURL = await uploadTask.ref.getDownloadURL();
-            }
-            
             await user.updateProfile({
                 displayName: displayName,
-                photoURL: photoURL,
+                photoURL: photoPreview,
             });
             
             setMessage('تم تحديث الملف الشخصي بنجاح!');
@@ -567,7 +567,6 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
             setMessage('حدث خطأ أثناء تحديث الملف الشخصي.');
         } finally {
             setLoading(false);
-            setPhotoFile(null);
         }
     };
 
@@ -588,19 +587,12 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
                             className="w-32 h-32 rounded-full object-cover border-4 border-sky-400/50"
                         />
                         <button
-                            onClick={() => fileInputRef.current?.click()}
+                            onClick={handleImageUpload}
                             className="absolute bottom-0 right-0 bg-sky-600 p-2 rounded-full hover:bg-sky-500 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-300"
                             aria-label="تغيير الصورة"
                         >
                             <CameraIcon className="w-6 h-6 text-white"/>
                         </button>
-                        <input 
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                            accept="image/*"
-                            className="hidden" 
-                        />
                     </div>
                 </div>
 
