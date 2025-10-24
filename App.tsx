@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
+import 'firebase/compat/storage';
 import { 
     // getAuth, // v9
     // createUserWithEmailAndPassword, // v9
@@ -29,13 +30,15 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const auth = firebase.auth();
+const storage = firebase.storage();
 
 // --- Types and Interfaces ---
-type View = 'main' | 'login' | 'signup' | 'forgot-password' | 'guest';
-type LoggedInView = 'home' | 'profile' | 'settings';
+type View = 'main' | 'login' | 'signup' | 'forgot-password';
+type LoggedInView = 'home' | 'settings';
 
 interface ViewProps {
     setView: React.Dispatch<React.SetStateAction<View>>;
+    handleGuestLogin?: () => Promise<void>;
 }
 
 // --- Helper Functions ---
@@ -87,6 +90,20 @@ const HouseIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const SettingsIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+);
+
+const CameraIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+);
+
 
 // --- UI Components ---
 const inputClasses = "w-full px-4 py-3 pr-10 text-white bg-black/20 placeholder-sky-200 rounded-lg border border-sky-400/30 focus:outline-none focus:bg-black/30 focus:border-sky-300 focus:ring-2 focus:ring-sky-300/50 transition-all duration-300 ease-in-out shadow-sm focus:shadow-lg";
@@ -95,7 +112,7 @@ const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
 );
 
 // --- Main View Component ---
-const MainView: React.FC<ViewProps> = ({ setView }) => {
+const MainView: React.FC<ViewProps> = ({ setView, handleGuestLogin }) => {
     return (
         <div className="text-center">
             <h1 className="text-4xl font-bold text-white mb-4 text-shadow">أهلاً بك في رحلتك نحو التعافي</h1>
@@ -114,7 +131,7 @@ const MainView: React.FC<ViewProps> = ({ setView }) => {
                     إنشاء حساب
                 </button>
                  <button
-                    onClick={() => setView('guest')}
+                    onClick={handleGuestLogin}
                     className="w-full bg-slate-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-slate-500 transition-transform transform hover:scale-105"
                 >
                     دخول كضيف
@@ -136,9 +153,7 @@ const LoginView: React.FC<ViewProps> = ({ setView }) => {
         setError('');
         setLoading(true);
         try {
-            // FIX: Changed to v8 namespaced API call.
             await auth.signInWithEmailAndPassword(email, password);
-            // onAuthStateChanged will handle the view change
         } catch (err: any) {
             setError(getFirebaseErrorMessage(err.code));
         } finally {
@@ -228,12 +243,9 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
         setError('');
         setLoading(true);
         try {
-            // FIX: Changed to v8 namespaced API call.
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             if (userCredential.user) {
-                // FIX: Changed to v8 namespaced API call.
                 await userCredential.user.updateProfile({ displayName: name });
-                // FIX: Changed to v8 namespaced API call.
                 await userCredential.user.sendEmailVerification();
             }
             setSubmitted(true);
@@ -351,13 +363,11 @@ const ForgotPasswordView: React.FC<ViewProps> = ({ setView }) => {
         setError('');
         setLoading(true);
         try {
-            // FIX: Changed to v8 namespaced API call.
             await auth.sendPasswordResetEmail(email);
             setSubmitted(true);
         } catch (err: any) {
-            // Don't reveal if user exists for security
             if(err.code === 'auth/user-not-found') {
-                 setSubmitted(true); // Pretend it was successful
+                 setSubmitted(true);
             } else {
                 setError(getFirebaseErrorMessage(err.code));
             }
@@ -421,24 +431,6 @@ const ForgotPasswordView: React.FC<ViewProps> = ({ setView }) => {
     );
 };
 
-// --- Guest View Component ---
-const GuestView: React.FC<ViewProps> = ({ setView }) => {
-    return (
-        <div className="text-center text-white">
-            <h1 className="text-3xl font-bold mb-4 text-shadow">
-                مرحباً بك كزائر
-            </h1>
-            <p className="text-sky-200 mb-8">أنت تتصفح التطبيق الآن كضيف.</p>
-            <button
-                onClick={() => setView('main')}
-                className="w-full bg-sky-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-sky-500 transition-transform transform hover:scale-105"
-            >
-                العودة إلى الصفحة الرئيسية
-            </button>
-        </div>
-    );
-};
-
 // --- Home View (for logged-in users) ---
 const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [resendMessage, setResendMessage] = useState('');
@@ -453,14 +445,6 @@ const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
 
         return () => clearTimeout(timerId);
     }, [cooldownTime]);
-
-    const handleSignOut = async () => {
-        try {
-            await auth.signOut();
-        } catch (error) {
-            console.error("Error signing out: ", error);
-        }
-    };
 
     const handleResendVerification = async () => {
         if (cooldownTime > 0) return;
@@ -487,13 +471,22 @@ const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
     return (
         <div className="text-white space-y-8">
             <header className="flex justify-between items-center w-full">
-                <h1 className="text-lg font-semibold text-shadow">
-                    مرحبا، {user.displayName || 'زائر'}
-                </h1>
-                <p className="text-xs text-sky-300">{currentDate}</p>
+                <div className="flex items-center gap-4">
+                    <img 
+                        src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'زائر'}&background=0ea5e9&color=fff&size=64`}
+                        alt="Profile"
+                        className="w-12 h-12 rounded-full object-cover border-2 border-sky-400/50"
+                    />
+                    <div>
+                        <h1 className="text-lg font-semibold text-shadow">
+                            مرحبا، {user.displayName || 'زائر'}
+                        </h1>
+                        <p className="text-xs text-sky-300">{currentDate}</p>
+                    </div>
+                </div>
             </header>
             
-            {!user.emailVerified && (
+            {user.email && !user.emailVerified && (
                  <div className="p-3 bg-yellow-900/50 text-yellow-300 rounded-lg space-y-3 text-center">
                     <p>
                         يرجى تفعيل حسابك عبر الرابط الذي أرسلناه إلى بريدك الإلكتروني.
@@ -517,6 +510,124 @@ const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
             <div className="text-center p-8 bg-sky-900/30 rounded-lg">
                 <p className="text-sky-200">هنا سيتم عرض محتوى الصفحة الرئيسية.</p>
             </div>
+        </div>
+    );
+};
+
+// --- Settings View ---
+const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }> = ({ user, handleSignOut }) => {
+    const [displayName, setDisplayName] = useState(user.displayName || '');
+    const [photoFile, setPhotoFile] = useState<File | null>(null);
+    const [photoPreview, setPhotoPreview] = useState<string | null>(user.photoURL || null);
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState('');
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        // Update local state if user object changes from parent
+        setDisplayName(user.displayName || '');
+        setPhotoPreview(user.photoURL || null);
+    }, [user]);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            setPhotoFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setPhotoPreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleSaveProfile = async () => {
+        setLoading(true);
+        setMessage('');
+        try {
+            let photoURL = user.photoURL;
+
+            if (photoFile) {
+                const filePath = `profile_pictures/${user.uid}/${Date.now()}_${photoFile.name}`;
+                const fileRef = storage.ref(filePath);
+                const uploadTask = await fileRef.put(photoFile);
+                photoURL = await uploadTask.ref.getDownloadURL();
+            }
+            
+            await user.updateProfile({
+                displayName: displayName,
+                photoURL: photoURL,
+            });
+            
+            setMessage('تم تحديث الملف الشخصي بنجاح!');
+            setTimeout(() => setMessage(''), 3000);
+
+        } catch (error) {
+            console.error("Error updating profile: ", error);
+            setMessage('حدث خطأ أثناء تحديث الملف الشخصي.');
+        } finally {
+            setLoading(false);
+            setPhotoFile(null);
+        }
+    };
+
+    return (
+        <div className="text-white space-y-8">
+            <header>
+                <h1 className="text-2xl font-bold text-center text-white text-shadow">الضبط</h1>
+            </header>
+            
+            <div className="space-y-6 p-6 bg-sky-900/30 rounded-lg">
+                <h2 className="text-xl font-semibold text-sky-200 border-b border-sky-400/30 pb-2">الملف الشخصي</h2>
+                
+                <div className="flex flex-col items-center space-y-4">
+                    <div className="relative">
+                        <img 
+                            src={photoPreview || `https://ui-avatars.com/api/?name=${displayName || 'زائر'}&background=0ea5e9&color=fff&size=128`}
+                            alt="الملف الشخصي"
+                            className="w-32 h-32 rounded-full object-cover border-4 border-sky-400/50"
+                        />
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="absolute bottom-0 right-0 bg-sky-600 p-2 rounded-full hover:bg-sky-500 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-300"
+                            aria-label="تغيير الصورة"
+                        >
+                            <CameraIcon className="w-6 h-6 text-white"/>
+                        </button>
+                        <input 
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            accept="image/*"
+                            className="hidden" 
+                        />
+                    </div>
+                </div>
+
+                <div className="relative">
+                    <label htmlFor="displayName" className="block mb-2 text-sm font-medium text-sky-200">الاسم</label>
+                    <span className="absolute inset-y-0 right-0 top-8 flex items-center pr-3">
+                        <UserIcon className="h-5 w-5 text-sky-200" />
+                    </span>
+                    <input
+                        id="displayName"
+                        type="text"
+                        placeholder="الاسم"
+                        className={inputClasses}
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                    />
+                </div>
+                
+                <button
+                    onClick={handleSaveProfile}
+                    disabled={loading}
+                    className="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-teal-500 transition-transform transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {loading ? 'جارِ الحفظ...' : 'حفظ التغييرات'}
+                </button>
+                {message && <p className="text-center text-green-300 mt-2 text-sm">{message}</p>}
+            </div>
 
             <button
                 onClick={handleSignOut}
@@ -528,11 +639,12 @@ const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
     );
 };
 
+
 // --- Bottom Navigation Bar ---
 const BottomNavBar: React.FC<{ activeTab: LoggedInView; setActiveTab: (tab: LoggedInView) => void; }> = ({ activeTab, setActiveTab }) => {
     const navItems = [
         { id: 'home', label: 'الرئيسية', icon: HouseIcon },
-        // Add more items here in the future e.g. { id: 'profile', label: 'الملف الشخصي', icon: UserIcon }
+        { id: 'settings', label: 'الضبط', icon: SettingsIcon },
     ];
 
     return (
@@ -561,11 +673,20 @@ const BottomNavBar: React.FC<{ activeTab: LoggedInView; setActiveTab: (tab: Logg
 const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [activeTab, setActiveTab] = useState<LoggedInView>('home');
 
+    const handleSignOut = async () => {
+        try {
+            await auth.signOut();
+        } catch (error) {
+            console.error("Error signing out: ", error);
+        }
+    };
+
     const renderActiveView = () => {
         switch (activeTab) {
             case 'home':
                 return <HomeView user={user} />;
-            // Add other cases for future tabs here e.g. case 'profile': return <ProfileView user={user} />;
+            case 'settings':
+                return <SettingsView user={user} handleSignOut={handleSignOut} />;
             default:
                 return <HomeView user={user} />;
         }
@@ -585,18 +706,26 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
 // --- App Component ---
 const App: React.FC = () => {
     const [view, setView] = useState<View>('main');
-    // FIX: Changed User type to firebase.User for v8 compatibility.
     const [user, setUser] = useState<firebase.User | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // FIX: Changed to v8 namespaced API call.
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
             setUser(currentUser);
             setLoading(false);
         });
         return () => unsubscribe();
     }, []);
+
+    const handleGuestLogin = async () => {
+        setLoading(true);
+        try {
+            await auth.signInAnonymously();
+        } catch (error) {
+            console.error("Error signing in as guest:", error);
+            setLoading(false);
+        }
+    };
 
     const renderAuthViews = () => {
         switch (view) {
@@ -606,10 +735,8 @@ const App: React.FC = () => {
                 return <SignupView setView={setView} />;
             case 'forgot-password':
                 return <ForgotPasswordView setView={setView} />;
-            case 'guest':
-                return <GuestView setView={setView} />;
             default:
-                return <MainView setView={setView} />;
+                return <MainView setView={setView} handleGuestLogin={handleGuestLogin} />;
         }
     };
     
