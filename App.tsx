@@ -684,6 +684,13 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
                 displayName: displayName,
                 photoURL: photoPreview,
             });
+
+            if (user.isAnonymous) {
+                localStorage.setItem('guestProfile', JSON.stringify({
+                    displayName: displayName,
+                    photoURL: photoPreview,
+                }));
+            }
             
             setMessage('تم تحديث الملف الشخصي بنجاح!');
             setTimeout(() => setMessage(''), 3000);
@@ -956,8 +963,27 @@ const App: React.FC = () => {
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-            setUser(currentUser);
+        const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+            if (currentUser && currentUser.isAnonymous) {
+                const savedProfileJSON = localStorage.getItem('guestProfile');
+                if (savedProfileJSON) {
+                    try {
+                        const savedProfile = JSON.parse(savedProfileJSON);
+                        if (currentUser.displayName !== savedProfile.displayName || currentUser.photoURL !== savedProfile.photoURL) {
+                            await currentUser.updateProfile({
+                                displayName: savedProfile.displayName,
+                                photoURL: savedProfile.photoURL,
+                            });
+                            // Reload the user to get the updated profile data immediately
+                            await currentUser.reload();
+                        }
+                    } catch (e) {
+                        console.error("Error processing guest profile from localStorage:", e);
+                    }
+                }
+            }
+            // Use auth.currentUser because `currentUser` from callback might be stale after a reload
+            setUser(auth.currentUser);
             setLoading(false);
         });
 
