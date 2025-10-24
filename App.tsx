@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
-// import 'firebase/compat/storage'; // Removed Firebase Storage
+import 'firebase/compat/firestore'; // Added Firestore
 import { 
     // getAuth, // v9
     // createUserWithEmailAndPassword, // v9
@@ -34,7 +33,7 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const auth = firebase.auth();
-// const storage = firebase.storage(); // Removed Firebase Storage
+const db = firebase.firestore(); // Initialized Firestore
 
 // --- Developer Configuration ---
 // Add the Firebase UID(s) of developer accounts here.
@@ -567,7 +566,7 @@ const CounterBar: React.FC<{ label: string; progress: number; colorClass: string
                 style={{ width: `${progress}%` }}
             ></div>
             <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-white font-bold text-lg">{label}</span>
+                <span className="text-white font-bold text-lg text-shadow">{label}</span>
             </div>
         </div>
     );
@@ -641,7 +640,6 @@ const HomeView: React.FC<{
                 
                 <main className="pt-8">
                     <div style={cardStyle} className={cardClasses}>
-                       {counterImage && <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>}
                        <div className="relative z-10 flex">
                             <div className="flex-grow space-y-3">
                                 <div className="flex items-center justify-between pl-2">
@@ -694,7 +692,6 @@ const HomeView: React.FC<{
             
             <main className="pt-8">
                 <div style={cardStyle} className={cardClasses}>
-                   {counterImage && <div className="absolute inset-0 bg-black/40 backdrop-blur-sm rounded-2xl"></div>}
                    <div className="relative z-10 flex">
                         <div className="flex-grow space-y-3">
                             <div className="flex items-center justify-between pl-2">
@@ -1222,18 +1219,55 @@ const DeleteImageConfirmationModal: React.FC<{ onConfirm: () => void; onClose: (
 // --- Logged In Layout ---
 const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [activeTab, setActiveTab] = useState<LoggedInView>('home');
-    const [startDate, setStartDate] = useState<Date | null>(() => {
-        const storedDate = localStorage.getItem('counterStartDate');
-        return storedDate ? new Date(storedDate) : null;
-    });
-    const [counterImage, setCounterImage] = useState<string | null>(() => {
-        return localStorage.getItem('counterBackgroundImage');
-    });
+    const [startDate, setStartDate] = useState<Date | null>(null);
+    const [counterImage, setCounterImage] = useState<string | null>(null);
     const [showSetDateModal, setShowSetDateModal] = useState(false);
     const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
     const [showDeleteImageConfirmModal, setShowDeleteImageConfirmModal] = useState(false);
 
     const isDeveloper = DEVELOPER_UIDS.includes(user.uid);
+
+    useEffect(() => {
+        let unsubscribeCounterImage: () => void;
+        let unsubscribeStartDate: () => void;
+    
+        // Fetch/subscribe to the global counter image
+        unsubscribeCounterImage = db.collection('app_config').doc('main')
+            .onSnapshot(doc => {
+                const data = doc.data();
+                setCounterImage(data?.imageUrl || null);
+            }, err => {
+                console.error("Error fetching counter image: ", err);
+            });
+    
+        // Fetch/subscribe to the user-specific start date
+        if (user.isAnonymous) {
+            // For guest users, use localStorage
+            const storedDate = localStorage.getItem('counterStartDate');
+            if (storedDate) {
+                setStartDate(new Date(storedDate));
+            }
+        } else {
+            // For registered users, use Firestore
+            unsubscribeStartDate = db.collection('users').doc(user.uid)
+                .onSnapshot(doc => {
+                    const data = doc.data();
+                    if (data?.counterStartDate) {
+                        setStartDate(new Date(data.counterStartDate));
+                    } else {
+                        setStartDate(null); // Ensure it's null if not set in Firestore
+                    }
+                }, err => {
+                    console.error("Error fetching start date: ", err);
+                });
+        }
+    
+        // Cleanup subscriptions on component unmount
+        return () => {
+            if (unsubscribeCounterImage) unsubscribeCounterImage();
+            if (unsubscribeStartDate) unsubscribeStartDate();
+        };
+    }, [user]);
 
     const handleSignOut = async () => {
         try {
@@ -1243,22 +1277,37 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
         }
     };
     
+    const updateStartDate = async (newDate: Date) => {
+        // Optimistically update the state for a smooth UI response
+        setStartDate(newDate);
+
+        if (user.isAnonymous) {
+            localStorage.setItem('counterStartDate', newDate.toISOString());
+        } else {
+            try {
+                await db.collection('users').doc(user.uid).set(
+                    { counterStartDate: newDate.toISOString() },
+                    { merge: true }
+                );
+            } catch (error) {
+                console.error("Error updating start date in Firestore: ", error);
+                // Optionally handle the error, e.g., show a message to the user
+            }
+        }
+    };
+
     const handleResetCounter = () => {
         setShowResetConfirmModal(true);
     };
 
     const confirmResetCounter = () => {
-        const newStartDate = new Date();
-        localStorage.setItem('counterStartDate', newStartDate.toISOString());
-        setStartDate(newStartDate);
+        updateStartDate(new Date());
         setShowResetConfirmModal(false);
         setActiveTab('home');
     };
 
     const handleStartCounter = () => {
-        const newStartDate = new Date();
-        localStorage.setItem('counterStartDate', newStartDate.toISOString());
-        setStartDate(newStartDate);
+        updateStartDate(new Date());
     };
 
     const handleSetNewDate = (dateString: string) => {
@@ -1266,21 +1315,30 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
         const now = new Date();
         const localDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds());
         
-        localStorage.setItem('counterStartDate', localDate.toISOString());
-        setStartDate(localDate);
+        updateStartDate(localDate);
         setShowSetDateModal(false);
         setActiveTab('home');
     };
 
-    const handleSetCounterImage = (url: string) => {
-        localStorage.setItem('counterBackgroundImage', url);
-        setCounterImage(url);
+    const handleSetCounterImage = async (url: string) => {
+        try {
+            await db.collection('app_config').doc('main').set({ imageUrl: url }, { merge: true });
+            // The onSnapshot listener will automatically update the state
+        } catch (error) {
+            console.error("Error setting counter image in Firestore: ", error);
+        }
     };
 
-    const confirmDeleteCounterImage = () => {
-        localStorage.removeItem('counterBackgroundImage');
-        setCounterImage(null);
+    const confirmDeleteCounterImage = async () => {
         setShowDeleteImageConfirmModal(false);
+        try {
+            await db.collection('app_config').doc('main').update({
+                imageUrl: firebase.firestore.FieldValue.delete()
+            });
+            // The onSnapshot listener will automatically update the state
+        } catch (error) {
+            console.error("Error deleting counter image from Firestore: ", error);
+        }
     };
 
     const renderActiveView = () => {
