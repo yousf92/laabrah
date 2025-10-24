@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
@@ -33,6 +32,7 @@ const auth = firebase.auth();
 
 // --- Types and Interfaces ---
 type View = 'main' | 'login' | 'signup' | 'forgot-password' | 'guest';
+type LoggedInView = 'home' | 'profile' | 'settings';
 
 interface ViewProps {
     setView: React.Dispatch<React.SetStateAction<View>>;
@@ -81,6 +81,13 @@ const BackArrowIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const HouseIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+    </svg>
+);
+
+
 // --- UI Components ---
 const inputClasses = "w-full px-4 py-3 pr-10 text-white bg-black/20 placeholder-sky-200 rounded-lg border border-sky-400/30 focus:outline-none focus:bg-black/30 focus:border-sky-300 focus:ring-2 focus:ring-sky-300/50 transition-all duration-300 ease-in-out shadow-sm focus:shadow-lg";
 const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
@@ -91,7 +98,7 @@ const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
 const MainView: React.FC<ViewProps> = ({ setView }) => {
     return (
         <div className="text-center">
-            <h1 className="text-4xl font-bold text-white mb-4">أهلاً بك في رحلتك نحو التعافي</h1>
+            <h1 className="text-4xl font-bold text-white mb-4 text-shadow">أهلاً بك في رحلتك نحو التعافي</h1>
             <p className="text-sky-200 mb-8 text-lg">اختر كيف تود المتابعة</p>
             <div className="space-y-4">
                 <button
@@ -149,7 +156,7 @@ const LoginView: React.FC<ViewProps> = ({ setView }) => {
                 >
                     <BackArrowIcon className="w-6 h-6" />
                 </button>
-                <h2 className="text-2xl font-bold text-center text-white">تسجيل الدخول</h2>
+                <h2 className="text-2xl font-bold text-center text-white text-shadow">تسجيل الدخول</h2>
             </div>
             <form className="space-y-6" onSubmit={handleSubmit}>
                 {error && <ErrorMessage message={error} />}
@@ -247,7 +254,7 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
                  >
                     <BackArrowIcon className="w-6 h-6" />
                 </button>
-                <h2 className="text-2xl font-bold text-center text-white">إنشاء حساب جديد</h2>
+                <h2 className="text-2xl font-bold text-center text-white text-shadow">إنشاء حساب جديد</h2>
             </div>
             {submitted ? (
                  <div className="text-center text-white">
@@ -369,7 +376,7 @@ const ForgotPasswordView: React.FC<ViewProps> = ({ setView }) => {
                 >
                     <BackArrowIcon className="w-6 h-6" />
                 </button>
-                <h2 className="text-2xl font-bold text-center text-white">إعادة تعيين كلمة المرور</h2>
+                <h2 className="text-2xl font-bold text-center text-white text-shadow">إعادة تعيين كلمة المرور</h2>
             </div>
             
             {submitted ? (
@@ -418,7 +425,7 @@ const ForgotPasswordView: React.FC<ViewProps> = ({ setView }) => {
 const GuestView: React.FC<ViewProps> = ({ setView }) => {
     return (
         <div className="text-center text-white">
-            <h1 className="text-3xl font-bold mb-4">
+            <h1 className="text-3xl font-bold mb-4 text-shadow">
                 مرحباً بك كزائر
             </h1>
             <p className="text-sky-200 mb-8">أنت تتصفح التطبيق الآن كضيف.</p>
@@ -432,9 +439,8 @@ const GuestView: React.FC<ViewProps> = ({ setView }) => {
     );
 };
 
-
-// --- Logged In View ---
-const LoggedInView: React.FC<{ user: firebase.User }> = ({ user }) => {
+// --- Home View (for logged-in users) ---
+const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [resendMessage, setResendMessage] = useState('');
     const [cooldownTime, setCooldownTime] = useState(0);
 
@@ -471,13 +477,24 @@ const LoggedInView: React.FC<{ user: firebase.User }> = ({ user }) => {
         }
     };
     
+    const currentDate = new Date().toLocaleDateString('ar-IQ', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+
     return (
-        <div className="text-center text-white">
-            <h1 className="text-3xl font-bold mb-4">
-                مرحباً بك، {user.displayName || user.email}
-            </h1>
+        <div className="text-white space-y-8">
+            <header className="flex justify-between items-center w-full">
+                <h1 className="text-lg font-semibold text-shadow">
+                    مرحبا، {user.displayName || 'زائر'}
+                </h1>
+                <p className="text-xs text-sky-300">{currentDate}</p>
+            </header>
+            
             {!user.emailVerified && (
-                 <div className="mb-4 p-3 bg-yellow-900/50 text-yellow-300 rounded-lg space-y-3">
+                 <div className="p-3 bg-yellow-900/50 text-yellow-300 rounded-lg space-y-3 text-center">
                     <p>
                         يرجى تفعيل حسابك عبر الرابط الذي أرسلناه إلى بريدك الإلكتروني.
                     </p>
@@ -496,7 +513,11 @@ const LoggedInView: React.FC<{ user: firebase.User }> = ({ user }) => {
                     {resendMessage && <p className="text-sm mt-2">{resendMessage}</p>}
                 </div>
             )}
-            <p className="text-sky-200 mb-8">لقد تم تسجيل دخولك بنجاح.</p>
+            
+            <div className="text-center p-8 bg-sky-900/30 rounded-lg">
+                <p className="text-sky-200">هنا سيتم عرض محتوى الصفحة الرئيسية.</p>
+            </div>
+
             <button
                 onClick={handleSignOut}
                 className="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-red-500 transition-transform transform hover:scale-105"
@@ -506,6 +527,60 @@ const LoggedInView: React.FC<{ user: firebase.User }> = ({ user }) => {
         </div>
     );
 };
+
+// --- Bottom Navigation Bar ---
+const BottomNavBar: React.FC<{ activeTab: LoggedInView; setActiveTab: (tab: LoggedInView) => void; }> = ({ activeTab, setActiveTab }) => {
+    const navItems = [
+        { id: 'home', label: 'الرئيسية', icon: HouseIcon },
+        // Add more items here in the future e.g. { id: 'profile', label: 'الملف الشخصي', icon: UserIcon }
+    ];
+
+    return (
+        <nav className="fixed bottom-0 left-0 right-0 bg-sky-950/90 border-t border-sky-300/30 backdrop-blur-lg">
+            <div className="flex justify-around items-center h-16 max-w-md mx-auto">
+                {navItems.map(item => (
+                    <button 
+                        key={item.id}
+                        onClick={() => setActiveTab(item.id as LoggedInView)}
+                        className={`flex flex-col items-center justify-center space-y-1 w-full text-sm transition-colors duration-200 ${
+                            activeTab === item.id ? 'text-sky-300' : 'text-sky-500 hover:text-sky-300'
+                        }`}
+                        aria-current={activeTab === item.id ? 'page' : undefined}
+                    >
+                        <item.icon className="w-7 h-7" />
+                        <span>{item.label}</span>
+                    </button>
+                ))}
+            </div>
+        </nav>
+    );
+};
+
+
+// --- Logged In Layout ---
+const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
+    const [activeTab, setActiveTab] = useState<LoggedInView>('home');
+
+    const renderActiveView = () => {
+        switch (activeTab) {
+            case 'home':
+                return <HomeView user={user} />;
+            // Add other cases for future tabs here e.g. case 'profile': return <ProfileView user={user} />;
+            default:
+                return <HomeView user={user} />;
+        }
+    };
+
+    return (
+        <div className="w-full min-h-screen">
+            <main className="w-full max-w-md mx-auto pt-8 px-4 pb-24">
+                 {renderActiveView()}
+            </main>
+            <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} />
+        </div>
+    );
+};
+
 
 // --- App Component ---
 const App: React.FC = () => {
@@ -538,30 +613,35 @@ const App: React.FC = () => {
         }
     };
     
-    const renderContent = () => {
-        if (loading) {
-            return (
+    if (loading) {
+        return (
+            <main 
+                className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
+                style={{ backgroundImage: "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop')" }}
+            >
                 <div className="text-center text-white text-2xl">
                     جارِ التحميل...
                 </div>
-            );
-        }
-        if (user) {
-            return <LoggedInView user={user} />;
-        }
-        return renderAuthViews();
-    };
+            </main>
+        );
+    }
 
     return (
         <main 
-            className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
-            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?q=80&w=1948&auto=format&fit=crop')" }}
+            className="min-h-screen bg-cover bg-center"
+            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop')" }}
         >
-            <div className="w-full max-w-md bg-sky-950/70 rounded-2xl shadow-xl p-8 space-y-8 relative backdrop-blur-xl border border-sky-300/30">
-                <div className="relative z-10">
-                    {renderContent()}
+            {user ? (
+                <LoggedInLayout user={user} />
+            ) : (
+                <div className="flex items-center justify-center min-h-screen p-4">
+                    <div className="w-full max-w-md bg-sky-950/80 rounded-2xl shadow-xl p-8 space-y-8 relative backdrop-blur-xl border border-sky-300/30">
+                        <div className="relative z-10">
+                            {renderAuthViews()}
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
         </main>
     );
 };
