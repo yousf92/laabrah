@@ -1,0 +1,5 @@
+{
+  "name": "Arabic Authentication Page",
+  "description": "A user authentication page with options for login, signup, and guest access, presented entirely in Arabic.",
+  "requestFramePermissions": []
+}
