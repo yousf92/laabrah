@@ -57,6 +57,8 @@ const getFirebaseErrorMessage = (errorCode: string): string => {
             return 'هذا البريد الإلكتروني مستخدم بالفعل.';
         case 'auth/weak-password':
             return 'كلمة المرور ضعيفة جدًا. يجب أن تكون 6 أحرف على الأقل.';
+        case 'auth/requires-recent-login':
+            return 'هذه العملية حساسة وتتطلب مصادقة حديثة. يرجى تسجيل الخروج ثم الدخول مرة أخرى والمحاولة مجدداً.';
         default:
             return 'حدث خطأ ما. يرجى المحاولة مرة أخرى.';
     }
@@ -102,11 +104,28 @@ const SettingsIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const CameraIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2-2H5a2 2 0 01-2-2V9z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
 );
 
+const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    </svg>
+);
+
+const LogoutIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+    </svg>
+);
+
+const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+);
 
 // --- UI Components ---
 const inputClasses = "w-full px-4 py-3 pr-10 text-white bg-black/20 placeholder-sky-200 rounded-lg border border-sky-400/30 focus:outline-none focus:bg-black/30 focus:border-sky-300 focus:ring-2 focus:ring-sky-300/50 transition-all duration-300 ease-in-out shadow-sm focus:shadow-lg";
@@ -156,6 +175,7 @@ const LoginView: React.FC<ViewProps> = ({ setView }) => {
         setError('');
         setLoading(true);
         try {
+            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
             await auth.signInWithEmailAndPassword(email, password);
         } catch (err: any) {
             setError(getFirebaseErrorMessage(err.code));
@@ -246,6 +266,7 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
         setError('');
         setLoading(true);
         try {
+            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             if (userCredential.user) {
                 await userCredential.user.updateProfile({ displayName: name });
@@ -517,15 +538,119 @@ const HomeView: React.FC<{ user: firebase.User }> = ({ user }) => {
     );
 };
 
+// --- App Lock Components ---
+const SetPinModal: React.FC<{ onPinSet: (pin: string) => void; onClose: () => void; }> = ({ onPinSet, onClose }) => {
+    const [pin, setPin] = useState('');
+    const [confirmPin, setConfirmPin] = useState('');
+    const [error, setError] = useState('');
+
+    const handleSubmit = () => {
+        setError('');
+        if (!pin || pin.length < 4) {
+            setError('يجب أن يتكون الرمز من 4 أرقام على الأقل.');
+            return;
+        }
+        if (pin !== confirmPin) {
+            setError('الرمزان غير متطابقين.');
+            return;
+        }
+        onPinSet(pin);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="w-full max-w-sm bg-sky-950 border border-sky-500/50 rounded-lg p-6 space-y-4">
+                <h3 className="text-xl font-bold text-sky-300">تعيين رمز قفل التطبيق</h3>
+                {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+                <input
+                    type="password"
+                    placeholder="أدخل الرمز الجديد"
+                    className="w-full bg-black/30 border border-sky-400/50 rounded-md p-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                    maxLength={4}
+                />
+                <input
+                    type="password"
+                    placeholder="تأكيد الرمز الجديد"
+                    className="w-full bg-black/30 border border-sky-400/50 rounded-md p-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    value={confirmPin}
+                    onChange={(e) => setConfirmPin(e.target.value)}
+                    maxLength={4}
+                />
+                <div className="flex justify-end gap-4">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-600 rounded-md hover:bg-gray-500 transition-colors">إلغاء</button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-sky-600 rounded-md hover:bg-sky-500 transition-colors">تأكيد</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const LockScreen: React.FC<{ onUnlock: () => void }> = ({ onUnlock }) => {
+    const [pin, setPin] = useState('');
+    const [error, setError] = useState('');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const storedPin = localStorage.getItem('appLockPin');
+        if (pin === storedPin) {
+            onUnlock();
+        } else {
+            setError('الرمز غير صحيح. حاول مرة أخرى.');
+            setPin('');
+        }
+    };
+    
+    return (
+        <main 
+            className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
+            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop')" }}
+        >
+            <div className="w-full max-w-sm bg-sky-950/80 rounded-2xl shadow-xl p-8 space-y-6 relative backdrop-blur-xl border border-sky-300/30 text-white">
+                <div className="text-center">
+                    <LockIcon className="w-12 h-12 mx-auto text-sky-300 mb-4"/>
+                    <h2 className="text-2xl font-bold">التطبيق مقفل</h2>
+                    <p className="text-sky-300">الرجاء إدخال الرمز لفتح التطبيق</p>
+                </div>
+                {error && <p className="text-red-400 text-sm text-center -mb-2">{error}</p>}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <input
+                        type="password"
+                        className="w-full bg-black/30 border border-sky-400/50 rounded-md p-3 text-center text-white tracking-[1em] text-2xl focus:outline-none focus:ring-2 focus:ring-sky-500"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value)}
+                        maxLength={4}
+                        autoFocus
+                    />
+                     <button
+                        type="submit"
+                        className="w-full bg-sky-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-sky-500 transition-transform transform hover:scale-105"
+                    >
+                        فتح
+                    </button>
+                </form>
+            </div>
+        </main>
+    );
+};
+
+
 // --- Settings View ---
 const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }> = ({ user, handleSignOut }) => {
     const [displayName, setDisplayName] = useState(user.displayName || '');
     const [photoPreview, setPhotoPreview] = useState<string | null>(user.photoURL || null);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
     
+    // State for new features
+    const [appLockEnabled, setAppLockEnabled] = useState(!!localStorage.getItem('appLockPin'));
+    const [showSetPinModal, setShowSetPinModal] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleteConfirmation, setDeleteConfirmation] = useState('');
+
     useEffect(() => {
-        // Update local state if user object changes from parent
         setDisplayName(user.displayName || '');
         setPhotoPreview(user.photoURL || null);
     }, [user]);
@@ -553,6 +678,7 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
 
         setLoading(true);
         setMessage('');
+        setError('');
         try {
             await user.updateProfile({
                 displayName: displayName,
@@ -564,18 +690,55 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
 
         } catch (error) {
             console.error("Error updating profile: ", error);
-            setMessage('حدث خطأ أثناء تحديث الملف الشخصي.');
+            setError('حدث خطأ أثناء تحديث الملف الشخصي.');
         } finally {
             setLoading(false);
         }
     };
+    
+    const handleDeleteAccount = async () => {
+        if (deleteConfirmation !== 'حذف') {
+            setError('الرجاء كتابة "حذف" للتأكيد.');
+            return;
+        }
+        setLoading(true);
+        setError('');
+        setMessage('');
+        try {
+            await user.delete();
+            // Auth state change will handle redirect
+        } catch (err: any) {
+            setError(getFirebaseErrorMessage(err.code));
+            setShowDeleteModal(false); // Close modal to show error on main settings page
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const handleAppLockToggle = () => {
+        if (appLockEnabled) {
+            localStorage.removeItem('appLockPin');
+            setAppLockEnabled(false);
+        } else {
+            setShowSetPinModal(true);
+        }
+    };
+    
+    const handlePinSet = (pin: string) => {
+        localStorage.setItem('appLockPin', pin);
+        setAppLockEnabled(true);
+        setShowSetPinModal(false);
+    };
 
     return (
-        <div className="text-white space-y-8">
+        <div className="text-white space-y-6">
             <header>
                 <h1 className="text-2xl font-bold text-center text-white text-shadow">الضبط</h1>
             </header>
             
+            {error && <ErrorMessage message={error} />}
+
+            {/* Profile Section */}
             <div className="space-y-6 p-6 bg-sky-900/30 rounded-lg">
                 <h2 className="text-xl font-semibold text-sky-200 border-b border-sky-400/30 pb-2">الملف الشخصي</h2>
                 
@@ -621,12 +784,72 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
                 {message && <p className="text-center text-green-300 mt-2 text-sm">{message}</p>}
             </div>
 
-            <button
-                onClick={handleSignOut}
-                className="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-red-500 transition-transform transform hover:scale-105"
-            >
-                تسجيل الخروج
-            </button>
+            {/* Security Section */}
+            <div className="p-4 bg-sky-900/30 rounded-lg space-y-2">
+                <h3 className="text-lg font-semibold text-sky-200 px-2">الأمان</h3>
+                <div className="flex justify-between items-center p-2 rounded-lg hover:bg-sky-800/50 transition-colors">
+                    <div className="flex items-center gap-4">
+                        <ShieldCheckIcon className="w-6 h-6 text-sky-300"/>
+                        <span>قفل التطبيق</span>
+                    </div>
+                    <label htmlFor="app-lock-toggle" className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="app-lock-toggle" className="sr-only peer" checked={appLockEnabled} onChange={handleAppLockToggle} />
+                        <div className="w-11 h-6 bg-gray-500 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-400 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600"></div>
+                    </label>
+                </div>
+                 <button onClick={handleSignOut} className="flex justify-between items-center w-full p-2 rounded-lg hover:bg-sky-800/50 transition-colors">
+                    <div className="flex items-center gap-4">
+                        <LogoutIcon className="w-6 h-6 text-sky-300"/>
+                        <span>تسجيل الخروج</span>
+                    </div>
+                </button>
+            </div>
+            
+            {/* Danger Zone */}
+            <div className="p-4 bg-red-900/30 rounded-lg space-y-2">
+                <h3 className="text-lg font-semibold text-red-300 px-2">منطقة الخطر</h3>
+                <button onClick={() => setShowDeleteModal(true)} className="flex justify-between items-center w-full p-2 rounded-lg hover:bg-red-800/50 transition-colors">
+                    <div className="flex items-center gap-4">
+                        <TrashIcon className="w-6 h-6 text-red-400"/>
+                        <span className="text-red-400">حذف الحساب</span>
+                    </div>
+                </button>
+            </div>
+
+            {/* Modals */}
+            {showSetPinModal && <SetPinModal onPinSet={handlePinSet} onClose={() => setShowSetPinModal(false)} />}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4">
+                        <h3 className="text-xl font-bold text-red-400">تأكيد حذف الحساب</h3>
+                        <p className="text-sky-200">
+                            هل أنت متأكد من رغبتك في حذف حسابك؟ سيتم حذف جميع بياناتك بشكل دائم ولا يمكن التراجع عن هذا الإجراء.
+                        </p>
+                        <p className="text-sm text-sky-300">للتأكيد، يرجى كتابة <span className="font-bold text-red-400">حذف</span> في المربع أدناه.</p>
+                        <input
+                            type="text"
+                            className="w-full bg-black/30 border border-red-400/50 rounded-md p-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            value={deleteConfirmation}
+                            onChange={(e) => setDeleteConfirmation(e.target.value)}
+                        />
+                        <div className="flex justify-end gap-4">
+                            <button 
+                                onClick={() => setShowDeleteModal(false)}
+                                className="px-4 py-2 bg-gray-600 rounded-md hover:bg-gray-500 transition-colors"
+                            >
+                                إلغاء
+                            </button>
+                             <button
+                                onClick={handleDeleteAccount}
+                                disabled={deleteConfirmation !== 'حذف' || loading}
+                                className="px-4 py-2 bg-red-600 rounded-md hover:bg-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {loading ? 'جارِ الحذف...' : 'تأكيد الحذف'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -700,18 +923,54 @@ const App: React.FC = () => {
     const [view, setView] = useState<View>('main');
     const [user, setUser] = useState<firebase.User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isLocked, setIsLocked] = useState(false);
 
     useEffect(() => {
+        const checkLockStatus = () => {
+            const pin = localStorage.getItem('appLockPin');
+            if (!pin) return;
+
+            const hiddenTimestamp = localStorage.getItem('appHiddenTimestamp');
+            if (hiddenTimestamp) {
+                const timeElapsed = Date.now() - parseInt(hiddenTimestamp, 10);
+                if (timeElapsed > 30000) { // 30 seconds
+                    setIsLocked(true);
+                }
+                // Always remove timestamp after checking
+                localStorage.removeItem('appHiddenTimestamp');
+            }
+        };
+
+        checkLockStatus(); // Check on initial load
+
+        const handleVisibilityChange = () => {
+            const pin = localStorage.getItem('appLockPin');
+            if (!pin) return;
+
+            if (document.hidden) {
+                localStorage.setItem('appHiddenTimestamp', String(Date.now()));
+            } else {
+                checkLockStatus();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
             setUser(currentUser);
             setLoading(false);
         });
-        return () => unsubscribe();
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            unsubscribe();
+        };
     }, []);
 
     const handleGuestLogin = async () => {
         setLoading(true);
         try {
+            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
             await auth.signInAnonymously();
         } catch (error) {
             console.error("Error signing in as guest:", error);
@@ -743,6 +1002,10 @@ const App: React.FC = () => {
                 </div>
             </main>
         );
+    }
+
+    if (user && isLocked) {
+        return <LockScreen onUnlock={() => setIsLocked(false)} />;
     }
 
     return (
