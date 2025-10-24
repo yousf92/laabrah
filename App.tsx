@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
@@ -642,7 +643,7 @@ const HomeView: React.FC<{
                     <div style={cardStyle} className={cardClasses}>
                        <div className="relative z-10 flex">
                             <div className="flex-grow space-y-3">
-                                <div className="flex items-center justify-between pl-2">
+                                <div className="flex items-center justify-end pl-2">
                                     <button onClick={() => setActiveTab('counter-settings')} className="p-2 rounded-full hover:bg-white/10">
                                         <SettingsIcon className="w-6 h-6 text-white"/>
                                     </button>
@@ -694,7 +695,7 @@ const HomeView: React.FC<{
                 <div style={cardStyle} className={cardClasses}>
                    <div className="relative z-10 flex">
                         <div className="flex-grow space-y-3">
-                            <div className="flex items-center justify-between pl-2">
+                            <div className="flex items-center justify-end pl-2">
                                 <button onClick={() => setActiveTab('counter-settings')} className="p-2 rounded-full hover:bg-white/10">
                                     <SettingsIcon className="w-6 h-6 text-white"/>
                                 </button>
@@ -1102,7 +1103,9 @@ const CounterSettingsView: React.FC<{
                  >
                     <BackArrowIcon className="w-6 h-6" />
                 </button>
-                <h1 className="text-2xl font-bold text-center text-white text-shadow">اعدادات العداد</h1>
+                <h1 className="text-2xl font-bold text-center text-white text-shadow">
+                    اعدادات العداد
+                </h1>
             </header>
 
             <div className="mt-8 p-4 bg-sky-900/30 rounded-lg space-y-2 max-w-sm mx-auto">
