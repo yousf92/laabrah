@@ -55,6 +55,7 @@ interface UserProfile {
 
 interface Conversation extends Omit<UserProfile, 'uid'> {
     uid: string;
+    hasUnread?: boolean;
 }
 
 
@@ -213,7 +214,7 @@ const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
 const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542 7z" />
     </svg>
 );
 
@@ -729,7 +730,8 @@ const HomeView: React.FC<{
     counterImage: string | null;
     setShowNotifications: (show: boolean) => void;
     setShowChat: (show: boolean) => void;
-}> = ({ user, setActiveTab, startDate, handleStartCounter, counterImage, setShowNotifications, setShowChat }) => {
+    hasUnreadPrivateMessages: boolean;
+}> = ({ user, setActiveTab, startDate, handleStartCounter, counterImage, setShowNotifications, setShowChat, hasUnreadPrivateMessages }) => {
     const [now, setNow] = useState(() => new Date());
     const animationFrameId = useRef<number>();
 
@@ -781,7 +783,10 @@ const HomeView: React.FC<{
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => setShowNotifications(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
-                        <button onClick={() => setShowChat(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ChatIcon className="w-6 h-6"/></button>
+                        <button onClick={() => setShowChat(true)} className="relative p-2 rounded-full hover:bg-white/10 transition-colors">
+                            <ChatIcon className="w-6 h-6"/>
+                            {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
+                        </button>
                         <button onClick={() => setActiveTab('settings')} className="p-2 rounded-full hover:bg-white/10 transition-colors">
                             <UserIcon className="w-6 h-6"/>
                         </button>
@@ -833,7 +838,10 @@ const HomeView: React.FC<{
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={() => setShowNotifications(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
-                    <button onClick={() => setShowChat(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ChatIcon className="w-6 h-6"/></button>
+                    <button onClick={() => setShowChat(true)} className="relative p-2 rounded-full hover:bg-white/10 transition-colors">
+                        <ChatIcon className="w-6 h-6"/>
+                        {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
+                    </button>
                     <button onClick={() => setActiveTab('settings')} className="p-2 rounded-full hover:bg-white/10 transition-colors">
                         <UserIcon className="w-6 h-6"/>
                     </button>
@@ -1777,11 +1785,14 @@ const PrivateConversationsList: React.FC<{
             {conversations.map(convo => (
                 <div key={convo.uid} className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50 group">
                     <button onClick={() => onConversationSelect(convo)} className="flex-grow flex items-center gap-3 text-right">
-                         <img
-                            src={convo.photoURL || `https://ui-avatars.com/api/?name=${convo.displayName || ' '}&background=0284c7&color=fff&size=128`}
-                            alt={convo.displayName}
-                            className="w-12 h-12 rounded-full object-cover"
-                        />
+                         <div className="relative">
+                            <img
+                                src={convo.photoURL || `https://ui-avatars.com/api/?name=${convo.displayName || ' '}&background=0284c7&color=fff&size=128`}
+                                alt={convo.displayName}
+                                className="w-12 h-12 rounded-full object-cover"
+                            />
+                            {convo.hasUnread && <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
+                         </div>
                         <span className="font-semibold">{convo.displayName}</span>
                     </button>
                     <button onClick={() => setConversationToDelete(convo)} className="p-2 text-red-500 hover:text-red-300 hover:bg-white/10 rounded-full transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">
@@ -1809,7 +1820,8 @@ const ChatModal: React.FC<{
     onStartPrivateChat: (user: UserProfile) => void;
     onBlockUser: (user: UserProfile) => void;
     onUnblockUser: (uid: string) => void;
-}> = ({ isOpen, onClose, user, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser }) => {
+    hasUnreadPrivateMessages: boolean;
+}> = ({ isOpen, onClose, user, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
@@ -1826,14 +1838,13 @@ const ChatModal: React.FC<{
     const [userForAction, setUserForAction] = useState<UserProfile | null>(null);
     const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
 
-
     useEffect(() => {
         if (!isOpen) {
             setActiveTab('public'); // Reset to public tab when closed
             return;
         }
 
-        const unsubscribe = db.collection('messages').orderBy('timestamp', 'asc').limit(100)
+        const unsubscribeMessages = db.collection('messages').orderBy('timestamp', 'asc').limit(100)
             .onSnapshot(snapshot => {
                 const fetchedMessages = snapshot.docs.map(doc => ({
                     id: doc.id,
@@ -1853,10 +1864,10 @@ const ChatModal: React.FC<{
         document.addEventListener('mousedown', handleClickOutside);
 
         return () => {
-             unsubscribe();
+             unsubscribeMessages();
              document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen]);
+    }, [isOpen, user.uid]);
 
     useEffect(() => {
         if (!editingMessage) {
@@ -1957,8 +1968,6 @@ const ChatModal: React.FC<{
 
     if (!isOpen) return null;
     
-    const filteredMessages = messages.filter(msg => !blockedUsers.includes(msg.uid));
-
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300">
             <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
@@ -1978,20 +1987,22 @@ const ChatModal: React.FC<{
                         </button>
                          <button 
                             onClick={() => setActiveTab('private')}
-                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors relative ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
                         >
                             المحادثات الخاصة
+                             {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
                         </button>
                     </div>
                 </header>
                 <main className="flex-grow overflow-y-auto">
                    {activeTab === 'public' ? (
                      <div className="p-4 space-y-4">
-                        {filteredMessages.map(msg => {
+                        {messages.map(msg => {
                             const isMyMessage = msg.uid === user.uid;
+                            const isBlocked = blockedUsers.includes(msg.uid);
                             const targetUser: UserProfile = { uid: msg.uid, displayName: msg.displayName, photoURL: msg.photoURL };
                             return (
-                                <div key={msg.id} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''}`}>
+                                <div key={msg.id} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''} ${isBlocked ? 'opacity-60' : ''}`}>
                                      <div className="relative">
                                         <button
                                             onClick={() => !isMyMessage && setUserForAction(targetUser)}
@@ -2046,7 +2057,7 @@ const ChatModal: React.FC<{
                                                 )}
 
                                                 <p className="text-sm font-bold text-sky-200 mb-1">{msg.displayName}</p>
-                                                <p className="text-white whitespace-pre-wrap">{msg.text}</p>
+                                                <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
                                             </div>
                                         )}
                                         {msg.reactions && Object.keys(msg.reactions).length > 0 && (
@@ -2152,6 +2163,7 @@ const PrivateChatModal: React.FC<{
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatId = [user.uid, otherUser.uid].sort().join('_');
     const messagesCollection = db.collection('private_chats').doc(chatId).collection('messages');
+    const [amIBlocked, setAmIBlocked] = useState(false);
 
     const [editingMessage, setEditingMessage] = useState<Message | null>(null);
     const [editText, setEditText] = useState('');
@@ -2175,6 +2187,22 @@ const PrivateChatModal: React.FC<{
                 console.error("Error fetching private messages: ", err);
             });
             
+        // Listener to check if I am blocked by the other user
+        const otherUserRef = db.collection('users').doc(otherUser.uid);
+        const unsubscribeAmIBlocked = otherUserRef.onSnapshot(doc => {
+            const data = doc.data();
+            const theirBlockedList = data?.blockedUsers || [];
+            setAmIBlocked(theirBlockedList.includes(user.uid));
+        }, err => {
+            console.error("Error checking if blocked:", err);
+            setAmIBlocked(false); // Default to not blocked on error
+        });
+
+        // Mark conversation as read on open
+        db.collection('users').doc(user.uid).collection('conversations').doc(otherUser.uid)
+            .set({ hasUnread: false }, { merge: true })
+            .catch(err => console.log("Failed to mark convo as read (may not exist yet):", err.message));
+            
         const handleClickOutside = (event: MouseEvent) => {
             if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
                 setReactingToMessageId(null);
@@ -2185,9 +2213,10 @@ const PrivateChatModal: React.FC<{
 
         return () => {
              unsubscribe();
+             unsubscribeAmIBlocked();
              document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen, chatId]);
+    }, [isOpen, chatId, user.uid, otherUser.uid]);
 
     useEffect(() => {
         if (!editingMessage) {
@@ -2197,7 +2226,7 @@ const PrivateChatModal: React.FC<{
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMessage.trim() || isBlocked) return;
+        if (!newMessage.trim() || isBlocked || amIBlocked) return;
 
         const { uid, displayName, photoURL, email } = user;
         setLoading(true);
@@ -2234,7 +2263,7 @@ const PrivateChatModal: React.FC<{
             const otherUserConversationsRef = db.collection('users').doc(otherUser.uid).collection('conversations').doc(uid);
 
             await userConversationsRef.set(otherProfileForMe, { merge: true });
-            await otherUserConversationsRef.set(myProfileForOther, { merge: true });
+            await otherUserConversationsRef.set({ ...myProfileForOther, hasUnread: true }, { merge: true });
 
         } catch (error) {
             console.error("Error sending private message:", error);
@@ -2391,7 +2420,7 @@ const PrivateChatModal: React.FC<{
                                                     ))}
                                                 </div>
                                             )}
-                                            <p className="text-white whitespace-pre-wrap">{msg.text}</p>
+                                            <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
                                         </div>
                                     )}
                                     {msg.reactions && Object.keys(msg.reactions).length > 0 && (
@@ -2422,7 +2451,11 @@ const PrivateChatModal: React.FC<{
                     <div ref={messagesEndRef} />
                 </main>
                 <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
-                    {isBlocked ? (
+                    {amIBlocked ? (
+                        <div className="text-center text-red-400 bg-red-900/50 p-3 rounded-lg">
+                            لقد قام هذا المستخدم بحظرك، لا يمكنك إرسال رسائل.
+                        </div>
+                    ) : isBlocked ? (
                         <div className="text-center text-red-400 bg-red-900/50 p-3 rounded-lg flex items-center justify-center gap-4">
                             <span>لقد حظرت هذا المستخدم.</span>
                             <button onClick={() => onUnblockUser(otherUser.uid)} className="font-bold text-green-300 hover:underline">إلغاء الحظر</button>
@@ -2477,6 +2510,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [privateChatTargetUser, setPrivateChatTargetUser] = useState<UserProfile | null>(null);
     const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
     const [userToBlock, setUserToBlock] = useState<UserProfile | null>(null);
+    const [hasUnreadPrivateMessages, setHasUnreadPrivateMessages] = useState(false);
 
     const isDeveloper = DEVELOPER_UIDS.includes(user.uid);
 
@@ -2484,6 +2518,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
         let unsubscribeCounterImage: () => void;
         let unsubscribeStartDate: () => void;
         let unsubscribeUser: () => void;
+        let unsubscribeConvos: () => void;
     
         unsubscribeCounterImage = db.collection('app_config').doc('main')
             .onSnapshot(doc => {
@@ -2508,6 +2543,12 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             unsubscribeUser = userRef.onSnapshot(doc => {
                 setBlockedUsers(doc.data()?.blockedUsers || []);
             }, err => console.error("Error fetching user data: ", err));
+
+            unsubscribeConvos = db.collection('users').doc(user.uid).collection('conversations')
+                .where('hasUnread', '==', true).limit(1)
+                .onSnapshot(snapshot => {
+                    setHasUnreadPrivateMessages(!snapshot.empty);
+                }, err => console.error("Error fetching unread status:", err));
         }
         
         const unsubscribeNotifications = db.collection('notifications').orderBy('timestamp', 'desc')
@@ -2523,6 +2564,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             if (unsubscribeCounterImage) unsubscribeCounterImage();
             if (unsubscribeStartDate) unsubscribeStartDate();
             if (unsubscribeUser) unsubscribeUser();
+            if (unsubscribeConvos) unsubscribeConvos();
             unsubscribeNotifications();
         };
     }, [user]);
@@ -2538,16 +2580,37 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const handleBlockUser = async () => {
         if (!userToBlock) return;
         const targetUid = userToBlock.uid;
-        setUserToBlock(null);
-        await db.collection('users').doc(user.uid).update({
-            blockedUsers: firebase.firestore.FieldValue.arrayUnion(targetUid)
+    
+        // Optimistically update the local state to make the UI feel instant
+        setBlockedUsers(prev => {
+            if (prev.includes(targetUid)) return prev;
+            return [...prev, targetUid];
         });
+    
+        setUserToBlock(null); // Close the confirmation modal
+    
+        // Asynchronously update Firestore. The listener will eventually reconcile the state.
+        try {
+            await db.collection('users').doc(user.uid).update({
+                blockedUsers: firebase.firestore.FieldValue.arrayUnion(targetUid)
+            });
+        } catch (error) {
+            console.error("Firestore update failed for block. UI will be corrected by listener.", error);
+        }
     };
     
     const handleUnblockUser = async (targetUid: string) => {
-        await db.collection('users').doc(user.uid).update({
-            blockedUsers: firebase.firestore.FieldValue.arrayRemove(targetUid)
-        });
+        // Optimistically update the local state to make the UI feel instant
+        setBlockedUsers(prev => prev.filter(uid => uid !== targetUid));
+    
+        // Asynchronously update Firestore. The listener will eventually reconcile the state.
+        try {
+            await db.collection('users').doc(user.uid).update({
+                blockedUsers: firebase.firestore.FieldValue.arrayRemove(targetUid)
+            });
+        } catch (error) {
+            console.error("Firestore update failed for unblock. UI will be corrected by listener.", error);
+        }
     };
 
     const updateStartDate = async (newDate: Date) => {
@@ -2609,7 +2672,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const renderActiveView = () => {
         switch (activeTab) {
             case 'home':
-                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} />;
+                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} hasUnreadPrivateMessages={hasUnreadPrivateMessages} />;
             case 'settings':
                 return <SettingsView user={user} handleSignOut={handleSignOut} blockedUsers={blockedUsers} handleUnblockUser={handleUnblockUser} />;
             case 'counter-settings':
@@ -2623,7 +2686,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
                     isDeveloper={isDeveloper}
                 />;
             default:
-                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} />;
+                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} hasUnreadPrivateMessages={hasUnreadPrivateMessages} />;
         }
     };
 
@@ -2644,6 +2707,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
                 onStartPrivateChat={(targetUser) => { setPrivateChatTargetUser(targetUser); setShowChat(false); }}
                 onBlockUser={(targetUser) => setUserToBlock(targetUser)}
                 onUnblockUser={handleUnblockUser}
+                hasUnreadPrivateMessages={hasUnreadPrivateMessages}
             />
             {privateChatTargetUser && (
                 <PrivateChatModal
@@ -2708,37 +2772,11 @@ const App: React.FC = () => {
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
-            if (currentUser && currentUser.isAnonymous) {
-                let profileUpdated = false;
-
-                // If guest has no display name, they are new. Assign a numbered name.
-                if (!currentUser.displayName) {
-                    const counterRef = db.collection('app_config').doc('guest_counter');
-                    try {
-                        const newGuestName = await db.runTransaction(async (transaction) => {
-                            const counterDoc = await transaction.get(counterRef);
-                            const newCount = (counterDoc.data()?.count || 0) + 1;
-                            transaction.set(counterRef, { count: newCount });
-                            return `زائر ${newCount}`;
-                        });
-                        await currentUser.updateProfile({ displayName: newGuestName });
-                        await db.collection('users').doc(currentUser.uid).set({
-                            displayName: newGuestName,
-                            photoURL: null,
-                            isAnonymous: true,
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        });
-                        localStorage.setItem('guestProfile', JSON.stringify({ displayName: newGuestName, photoURL: null }));
-                        profileUpdated = true;
-                    } catch (e) {
-                        console.error("Guest name transaction failed:", e);
-                        // Assign a generic name as a fallback
-                        await currentUser.updateProfile({ displayName: 'زائر' });
-                        profileUpdated = true;
-                    }
-                } else {
-                    // Existing guest, sync with localStorage which is updated from settings
+            if (currentUser) {
+                if (currentUser.isAnonymous) {
+                    let profileUpdated = false;
                     const savedProfileJSON = localStorage.getItem('guestProfile');
+        
                     if (savedProfileJSON) {
                         try {
                             const savedProfile = JSON.parse(savedProfileJSON);
@@ -2747,21 +2785,53 @@ const App: React.FC = () => {
                                     displayName: savedProfile.displayName,
                                     photoURL: savedProfile.photoURL,
                                 });
+                                await db.collection('users').doc(currentUser.uid).set({
+                                    displayName: savedProfile.displayName,
+                                    photoURL: savedProfile.photoURL,
+                                    isAnonymous: true,
+                                }, { merge: true });
                                 profileUpdated = true;
                             }
                         } catch (e) {
-                            console.error("Error processing guest profile from localStorage:", e);
+                            console.error("Error parsing guest profile from localStorage:", e);
+                            localStorage.removeItem('guestProfile'); // Clear corrupted data
+                        }
+                    } else if (!currentUser.displayName) {
+                        // Generate a new guest name without a DB transaction to avoid quota issues.
+                        const guestNumber = Math.floor(10 + Math.random() * 9990); // 2-4 digit random number
+                        const newGuestName = `زائر ${guestNumber}`;
+                        try {
+                            await currentUser.updateProfile({ displayName: newGuestName });
+                            await db.collection('users').doc(currentUser.uid).set({
+                                displayName: newGuestName,
+                                photoURL: null,
+                                isAnonymous: true,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                            });
+                            // Save the new profile to localStorage for persistence
+                            localStorage.setItem('guestProfile', JSON.stringify({ displayName: newGuestName, photoURL: null }));
+                            profileUpdated = true;
+                        } catch (e) {
+                            console.error("Error setting up new guest profile:", e);
+                            // Fallback in case of error
+                            await currentUser.updateProfile({ displayName: 'زائر' });
+                            profileUpdated = true;
                         }
                     }
+                    
+                    if (profileUpdated) {
+                        await currentUser.reload();
+                        setUser(auth.currentUser);
+                    } else {
+                        setUser(currentUser);
+                    }
+                } else {
+                    localStorage.removeItem('guestProfile');
+                    setUser(currentUser);
                 }
-                
-                if (profileUpdated) {
-                    await currentUser.reload();
-                }
+            } else {
+                setUser(null);
             }
-
-            // Use auth.currentUser because `currentUser` from callback might be stale after a reload
-            setUser(auth.currentUser);
             setLoading(false);
         });
 
