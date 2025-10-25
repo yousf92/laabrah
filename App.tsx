@@ -46,6 +46,35 @@ const DEVELOPER_UIDS = ['sytCf4Ru91ZplxTeXYfvqGhDnn12'];
 type View = 'main' | 'login' | 'signup' | 'forgot-password';
 type LoggedInView = 'home' | 'settings' | 'counter-settings';
 
+interface UserProfile {
+    uid: string;
+    displayName: string;
+    photoURL: string | null;
+    email?: string;
+}
+
+interface Conversation extends Omit<UserProfile, 'uid'> {
+    uid: string;
+}
+
+
+interface Notification {
+    id: string;
+    title: string;
+    message: string;
+    timestamp: firebase.firestore.Timestamp;
+}
+
+interface Message {
+    id: string;
+    text: string;
+    timestamp: firebase.firestore.Timestamp;
+    uid: string;
+    displayName: string;
+    photoURL: string | null;
+    reactions?: { [emoji: string]: string[] };
+}
+
 interface ViewProps {
     setView: React.Dispatch<React.SetStateAction<View>>;
     handleGuestLogin?: () => Promise<void>;
@@ -70,6 +99,22 @@ const getFirebaseErrorMessage = (errorCode: string): string => {
             return 'حدث خطأ ما. يرجى المحاولة مرة أخرى.';
     }
 };
+
+const formatDistanceToNow = (date: Date): string => {
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+    if (seconds < 60) return 'الآن';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `قبل ${minutes} دقيقة`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `قبل ${hours} ساعة`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `قبل ${days} يوم`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `قبل ${months} شهر`;
+    const years = Math.floor(months / 12);
+    return `قبل ${years} سنة`;
+};
+
 
 // --- SVG Icons ---
 const UserIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -165,6 +210,74 @@ const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+);
+
+const EyeSlashIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+    </svg>
+);
+
+const PencilIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" />
+    </svg>
+);
+
+const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+    </svg>
+);
+
+const XMarkIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const SendIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+    </svg>
+);
+
+const DotsVerticalIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+    </svg>
+);
+
+const FaceSmileIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+const PaperAirplaneIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+    </svg>
+);
+
+const UserMinusIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+const UserPlusIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+
 // --- UI Components ---
 const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
     <p className="text-center text-red-400 bg-red-900/50 p-2 rounded-lg">{message}</p>
@@ -204,6 +317,7 @@ const MainView: React.FC<ViewProps> = ({ setView, handleGuestLogin }) => {
 const LoginView: React.FC<ViewProps> = ({ setView }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -255,7 +369,7 @@ const LoginView: React.FC<ViewProps> = ({ setView }) => {
                 </div>
                 <div className="relative z-0">
                     <input
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         id="login_password"
                         className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
                         placeholder=" "
@@ -270,6 +384,14 @@ const LoginView: React.FC<ViewProps> = ({ setView }) => {
                     >
                         كلمة المرور
                     </label>
+                    <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute top-1/2 -translate-y-1/2 left-0 p-2 text-sky-200 hover:text-white transition-colors focus:outline-none"
+                        aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                    >
+                        {showPassword ? <EyeSlashIcon className="w-6 h-6" /> : <EyeIcon className="w-6 h-6" />}
+                    </button>
                 </div>
                 <div className="text-left -mt-4">
                      <button
@@ -298,6 +420,8 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
@@ -316,6 +440,13 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
             if (userCredential.user) {
                 await userCredential.user.updateProfile({ displayName: name });
                 await userCredential.user.sendEmailVerification();
+                // Create user document in Firestore
+                await db.collection('users').doc(userCredential.user.uid).set({
+                    displayName: name,
+                    email: email,
+                    photoURL: null,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                });
             }
             setSubmitted(true);
         } catch (err: any) {
@@ -389,7 +520,7 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
                     </div>
                     <div className="relative z-0">
                         <input
-                            type="password"
+                            type={showPassword ? 'text' : 'password'}
                             id="signup_password"
                             className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
                             placeholder=" "
@@ -404,10 +535,18 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
                         >
                             كلمة المرور
                         </label>
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute top-1/2 -translate-y-1/2 left-0 p-2 text-sky-200 hover:text-white transition-colors focus:outline-none"
+                            aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                        >
+                            {showPassword ? <EyeSlashIcon className="w-6 h-6" /> : <EyeIcon className="w-6 h-6" />}
+                        </button>
                     </div>
                      <div className="relative z-0">
                         <input
-                            type="password"
+                            type={showConfirmPassword ? 'text' : 'password'}
                             id="signup_confirm_password"
                             className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
                             placeholder=" "
@@ -422,6 +561,14 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
                         >
                             تأكيد كلمة المرور
                         </label>
+                         <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute top-1/2 -translate-y-1/2 left-0 p-2 text-sky-200 hover:text-white transition-colors focus:outline-none"
+                            aria-label={showConfirmPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                        >
+                            {showConfirmPassword ? <EyeSlashIcon className="w-6 h-6" /> : <EyeIcon className="w-6 h-6" />}
+                        </button>
                     </div>
                     <button
                         type="submit"
@@ -561,7 +708,7 @@ const calculateTimeDifference = (startDate: Date, now: Date): TimeDifference => 
 
 const CounterBar: React.FC<{ label: string; progress: number; colorClass: string }> = ({ label, progress, colorClass }) => {
     return (
-        <div className="flex-grow h-12 bg-black/20 rounded-lg p-1 relative">
+        <div className="flex-grow h-12 bg-black/40 rounded-lg p-1 relative">
             <div
                 className={`${colorClass} h-full rounded-md transition-none`}
                 style={{ width: `${progress}%` }}
@@ -580,7 +727,9 @@ const HomeView: React.FC<{
     startDate: Date | null; 
     handleStartCounter: () => void;
     counterImage: string | null;
-}> = ({ user, setActiveTab, startDate, handleStartCounter, counterImage }) => {
+    setShowNotifications: (show: boolean) => void;
+    setShowChat: (show: boolean) => void;
+}> = ({ user, setActiveTab, startDate, handleStartCounter, counterImage, setShowNotifications, setShowChat }) => {
     const [now, setNow] = useState(() => new Date());
     const animationFrameId = useRef<number>();
 
@@ -631,8 +780,8 @@ const HomeView: React.FC<{
                         <p className="text-sm text-sky-300">{currentDate}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
-                        <button className="p-2 rounded-full hover:bg-white/10 transition-colors"><ChatIcon className="w-6 h-6"/></button>
+                        <button onClick={() => setShowNotifications(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
+                        <button onClick={() => setShowChat(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ChatIcon className="w-6 h-6"/></button>
                         <button onClick={() => setActiveTab('settings')} className="p-2 rounded-full hover:bg-white/10 transition-colors">
                             <UserIcon className="w-6 h-6"/>
                         </button>
@@ -641,8 +790,11 @@ const HomeView: React.FC<{
                 
                 <main className="pt-8">
                     <div style={cardStyle} className={cardClasses}>
-                       <div className="relative z-10 flex">
-                            <div className="flex-grow space-y-3">
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <StopwatchIcon className="w-36 h-36 text-white/10" />
+                        </div>
+                       <div className="relative z-10">
+                            <div className="space-y-3">
                                 <div className="flex items-center justify-end pl-2">
                                     <button onClick={() => setActiveTab('counter-settings')} className="p-2 rounded-full hover:bg-white/10">
                                         <SettingsIcon className="w-6 h-6 text-white"/>
@@ -653,9 +805,6 @@ const HomeView: React.FC<{
                                 <CounterBar label={`0 ساعات`} progress={0} colorClass="bg-blue-500" />
                                 <CounterBar label={`0 دقائق`} progress={0} colorClass="bg-pink-500" />
                                 <CounterBar label={`0 ثواني`} progress={0} colorClass="bg-yellow-500" />
-                            </div>
-                            <div className="flex-shrink-0 w-24 flex items-center justify-center -mr-4">
-                                {!counterImage && <StopwatchIcon className="w-36 h-36 text-white/10 transform -scale-x-100" />}
                             </div>
                        </div>
                     </div>
@@ -683,8 +832,8 @@ const HomeView: React.FC<{
                     <p className="text-sm text-sky-300">{currentDate}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
-                    <button className="p-2 rounded-full hover:bg-white/10 transition-colors"><ChatIcon className="w-6 h-6"/></button>
+                    <button onClick={() => setShowNotifications(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
+                    <button onClick={() => setShowChat(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><ChatIcon className="w-6 h-6"/></button>
                     <button onClick={() => setActiveTab('settings')} className="p-2 rounded-full hover:bg-white/10 transition-colors">
                         <UserIcon className="w-6 h-6"/>
                     </button>
@@ -693,8 +842,11 @@ const HomeView: React.FC<{
             
             <main className="pt-8">
                 <div style={cardStyle} className={cardClasses}>
-                   <div className="relative z-10 flex">
-                        <div className="flex-grow space-y-3">
+                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <StopwatchIcon className="w-36 h-36 text-white/10" />
+                    </div>
+                   <div className="relative z-10">
+                        <div className="space-y-3">
                             <div className="flex items-center justify-end pl-2">
                                 <button onClick={() => setActiveTab('counter-settings')} className="p-2 rounded-full hover:bg-white/10">
                                     <SettingsIcon className="w-6 h-6 text-white"/>
@@ -705,9 +857,6 @@ const HomeView: React.FC<{
                             <CounterBar label={`${timeDiff.hours} ساعات`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-blue-500" />
                             <CounterBar label={`${timeDiff.minutes} دقائق`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-pink-500" />
                             <CounterBar label={`${timeDiff.seconds} ثواني`} progress={((timeDiff.seconds * 1000 + milliseconds) / 60000) * 100} colorClass="bg-yellow-500" />
-                        </div>
-                        <div className="flex-shrink-0 w-24 flex items-center justify-center -mr-4">
-                            {!counterImage && <StopwatchIcon className="w-36 h-36 text-white/10 transform -scale-x-100" />}
                         </div>
                    </div>
                 </div>
@@ -842,7 +991,72 @@ const SetStartDateModal: React.FC<{ onClose: () => void; onSave: (date: string) 
     );
 };
 
-const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }> = ({ user, handleSignOut }) => {
+const BlockedUsersManager: React.FC<{ blockedUids: string[]; onUnblock: (uid: string) => void; }> = ({ blockedUids, onUnblock }) => {
+    const [blockedProfiles, setBlockedProfiles] = useState<UserProfile[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (blockedUids.length === 0) {
+            setBlockedProfiles([]);
+            setLoading(false);
+            return;
+        }
+
+        const fetchProfiles = async () => {
+            setLoading(true);
+            const profiles: UserProfile[] = [];
+            for (const uid of blockedUids) {
+                try {
+                    const userDoc = await db.collection('users').doc(uid).get();
+                    if (userDoc.exists) {
+                        profiles.push({ uid, ...(userDoc.data() as Omit<UserProfile, 'uid'>) });
+                    }
+                } catch (error) {
+                    console.error(`Failed to fetch profile for UID ${uid}`, error);
+                }
+            }
+            setBlockedProfiles(profiles);
+            setLoading(false);
+        };
+
+        fetchProfiles();
+    }, [blockedUids]);
+
+    return (
+        <div className="p-4 bg-sky-900/30 rounded-lg space-y-2">
+            <h3 className="text-lg font-semibold text-sky-200 px-2">المستخدمون المحظورون</h3>
+            {loading ? (
+                <p className="text-center text-sky-300">جارِ التحميل...</p>
+            ) : blockedProfiles.length > 0 ? (
+                <ul className="space-y-2">
+                    {blockedProfiles.map(profile => (
+                        <li key={profile.uid} className="flex justify-between items-center p-2 rounded-lg hover:bg-sky-800/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                                <img
+                                    src={profile.photoURL || `https://ui-avatars.com/api/?name=${profile.displayName || ' '}&background=0284c7&color=fff&size=128`}
+                                    alt={profile.displayName}
+                                    className="w-10 h-10 rounded-full object-cover"
+                                />
+                                <span>{profile.displayName}</span>
+                            </div>
+                            <button onClick={() => onUnblock(profile.uid)} className="px-3 py-1 text-sm bg-sky-600 hover:bg-sky-500 rounded-md transition-colors">إلغاء الحظر</button>
+                        </li>
+                    ))}
+                </ul>
+            ) : (
+                <p className="text-center text-sky-400 p-2">لا يوجد مستخدمون محظورون.</p>
+            )}
+        </div>
+    );
+};
+
+
+const SettingsView: React.FC<{ 
+    user: firebase.User; 
+    handleSignOut: () => void; 
+    blockedUsers: string[];
+    handleUnblockUser: (uid: string) => void;
+}> = ({ user, handleSignOut, blockedUsers, handleUnblockUser }) => {
     const [displayName, setDisplayName] = useState(user.displayName || '');
     const [photoPreview, setPhotoPreview] = useState<string | null>(user.photoURL || null);
     const [loading, setLoading] = useState(false);
@@ -894,6 +1108,11 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
                     displayName: displayName,
                     photoURL: photoPreview,
                 }));
+            } else {
+                await db.collection('users').doc(user.uid).update({
+                    displayName: displayName,
+                    photoURL: photoPreview,
+                });
             }
             
             setMessage('تم تحديث الملف الشخصي بنجاح!');
@@ -1018,6 +1237,8 @@ const SettingsView: React.FC<{ user: firebase.User; handleSignOut: () => void; }
                 </button>
             </div>
             
+            {!user.isAnonymous && <BlockedUsersManager blockedUids={blockedUsers} onUnblock={handleUnblockUser} />}
+
             {/* Danger Zone */}
             <div className="p-4 bg-red-900/30 rounded-lg space-y-2">
                 <h3 className="text-lg font-semibold text-red-300 px-2">منطقة الخطر</h3>
@@ -1219,6 +1440,1028 @@ const DeleteImageConfirmationModal: React.FC<{ onConfirm: () => void; onClose: (
     </div>
 );
 
+// --- Notification Components ---
+const DeleteNotificationConfirmationModal: React.FC<{ onConfirm: () => void; onClose: () => void; }> = ({ onConfirm, onClose }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
+            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حذف الإشعار</h3>
+            <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في حذف هذا الإشعار بشكل دائم؟</p>
+            <div className="flex justify-center gap-4 pt-4">
+                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500">
+                    إلغاء
+                </button>
+                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-red-500">
+                    حذف
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+const NotificationsModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    notifications: Notification[];
+    isDeveloper: boolean;
+}> = ({ isOpen, onClose, notifications, isDeveloper }) => {
+    const [isFormVisible, setFormVisible] = useState(false);
+    const [editingNotification, setEditingNotification] = useState<Notification | null>(null);
+    const [title, setTitle] = useState('');
+    const [message, setMessage] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [notificationToDelete, setNotificationToDelete] = useState<Notification | null>(null);
+
+    useEffect(() => {
+        if (!isOpen) {
+            // Reset state when modal is closed
+            setFormVisible(false);
+            setEditingNotification(null);
+            setError('');
+            setTitle('');
+            setMessage('');
+        }
+    }, [isOpen]);
+
+    const handleShowFormForNew = () => {
+        setEditingNotification(null);
+        setTitle('');
+        setMessage('');
+        setFormVisible(true);
+    };
+
+    const handleShowFormForEdit = (notification: Notification) => {
+        setEditingNotification(notification);
+        setTitle(notification.title);
+        setMessage(notification.message);
+        setFormVisible(true);
+    };
+
+    const handleCancelForm = () => {
+        setFormVisible(false);
+        setEditingNotification(null);
+        setError('');
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!title.trim() || !message.trim()) {
+            setError('يجب ملء حقل العنوان والرسالة.');
+            return;
+        }
+        setLoading(true);
+        setError('');
+
+        try {
+            if (editingNotification) {
+                // Update existing notification
+                await db.collection('notifications').doc(editingNotification.id).update({ title, message });
+            } else {
+                // Create new notification
+                await db.collection('notifications').add({
+                    title,
+                    message,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            handleCancelForm();
+        } catch (err) {
+            console.error("Error saving notification:", err);
+            setError('حدث خطأ أثناء حفظ الإشعار.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!notificationToDelete) return;
+        setLoading(true);
+        try {
+            await db.collection('notifications').doc(notificationToDelete.id).delete();
+            setNotificationToDelete(null);
+        } catch (err) {
+            console.error("Error deleting notification:", err);
+            setError('حدث خطأ أثناء حذف الإشعار.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (!isOpen) return null;
+
+    const ViewComponent = (
+        <div className="p-4 space-y-4">
+            {isDeveloper && (
+                <button onClick={handleShowFormForNew} className="w-full flex items-center justify-center gap-2 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-teal-500 to-teal-700 hover:from-teal-400 hover:to-teal-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-teal-400">
+                    <PlusIcon className="w-6 h-6" />
+                    <span>إشعار جديد</span>
+                </button>
+            )}
+            {notifications.length > 0 ? (
+                notifications.map(notification => (
+                    <div key={notification.id} className="bg-sky-900/50 p-4 rounded-lg border border-sky-400/20">
+                        <div className="flex justify-between items-start gap-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-sky-200">{notification.title}</h3>
+                                <p className="text-sm text-sky-400 mt-1 mb-2 whitespace-pre-wrap">{notification.message}</p>
+                                <p className="text-xs text-sky-500">{notification.timestamp ? formatDistanceToNow(notification.timestamp.toDate()) : '...'}</p>
+                            </div>
+                            {isDeveloper && (
+                                <div className="flex gap-2 flex-shrink-0">
+                                    <button onClick={() => handleShowFormForEdit(notification)} className="p-2 text-yellow-300 hover:text-yellow-100 hover:bg-white/10 rounded-full transition-colors"><PencilIcon className="w-5 h-5"/></button>
+                                    <button onClick={() => setNotificationToDelete(notification)} className="p-2 text-red-400 hover:text-red-200 hover:bg-white/10 rounded-full transition-colors"><TrashIcon className="w-5 h-5"/></button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))
+            ) : (
+                <p className="text-center text-sky-400 py-8">لا توجد إشعارات حالياً.</p>
+            )}
+        </div>
+    );
+
+    const FormComponent = (
+        <form onSubmit={handleSubmit} className="p-4 space-y-6">
+            {error && <ErrorMessage message={error} />}
+            <div className="relative z-0">
+                <input id="notif_title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer" placeholder=" " required />
+                <label htmlFor="notif_title" className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6">العنوان</label>
+            </div>
+            <div className="relative z-0">
+                <textarea id="notif_message" value={message} onChange={(e) => setMessage(e.target.value)} className="block py-2.5 px-0 w-full h-32 text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer" placeholder=" " required />
+                <label htmlFor="notif_message" className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6">الرسالة</label>
+            </div>
+            <div className="flex justify-end gap-4 pt-4">
+                <button type="button" onClick={handleCancelForm} className="px-4 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500">إلغاء</button>
+                <button type="submit" disabled={loading} className="px-4 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-sky-600 to-sky-800 hover:from-sky-500 hover:to-sky-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {loading ? 'جارِ الحفظ...' : 'حفظ'}
+                </button>
+            </div>
+        </form>
+    );
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300">
+            <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
+                <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-sky-200 text-shadow">
+                        {isFormVisible ? (editingNotification ? 'تعديل الإشعار' : 'إشعار جديد') : 'الإشعارات'}
+                    </h2>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                        <XMarkIcon className="w-6 h-6"/>
+                    </button>
+                </header>
+                <main className="flex-grow overflow-y-auto">
+                    {isFormVisible ? FormComponent : ViewComponent}
+                </main>
+            </div>
+            {notificationToDelete && <DeleteNotificationConfirmationModal onConfirm={handleDelete} onClose={() => setNotificationToDelete(null)} />}
+        </div>
+    );
+};
+
+// --- Chat Component ---
+const MessageActionModal: React.FC<{
+    onClose: () => void;
+    onEdit: () => void;
+    onDelete: () => void;
+}> = ({ onClose, onEdit, onDelete }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onClose}>
+        <div className="w-full max-w-sm bg-sky-950/90 border border-sky-500/50 rounded-lg p-6 space-y-4 text-white" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-sky-300 text-center">إجراءات الرسالة</h3>
+            <div className="flex flex-col gap-4 pt-4">
+                <button onClick={onEdit} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                    <PencilIcon className="w-6 h-6 text-yellow-300"/>
+                    <span>تعديل</span>
+                </button>
+                <button onClick={onDelete} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
+                    <TrashIcon className="w-6 h-6 text-red-400"/>
+                    <span className="text-red-400">حذف</span>
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+const UserActionModal: React.FC<{
+    userProfile: UserProfile;
+    onClose: () => void;
+    onStartPrivateChat: () => void;
+    onBlockUser: () => void;
+    onUnblockUser: () => void;
+    isBlocked: boolean;
+}> = ({ userProfile, onClose, onStartPrivateChat, onBlockUser, onUnblockUser, isBlocked }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onClose}>
+        <div className="w-full max-w-sm bg-sky-950/90 border border-sky-500/50 rounded-lg p-6 space-y-4 text-white" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-sky-300 text-center truncate">خيارات لـ {userProfile.displayName}</h3>
+            <div className="flex flex-col gap-4 pt-4">
+                <button onClick={onStartPrivateChat} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                    <PaperAirplaneIcon className="w-6 h-6 text-sky-300"/>
+                    <span>إرسال رسالة خاصة</span>
+                </button>
+                {!isBlocked ? (
+                    <button onClick={onBlockUser} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
+                        <UserMinusIcon className="w-6 h-6 text-red-400"/>
+                        <span className="text-red-400">حظر المستخدم</span>
+                    </button>
+                ) : (
+                     <button onClick={onUnblockUser} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-green-800/50 hover:bg-green-700/70">
+                        <UserPlusIcon className="w-6 h-6 text-green-400"/>
+                        <span className="text-green-400">إلغاء حظر المستخدم</span>
+                    </button>
+                )}
+            </div>
+        </div>
+    </div>
+);
+
+const DeleteMessageConfirmationModal: React.FC<{ onConfirm: () => void; onClose: () => void; }> = ({ onConfirm, onClose }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
+            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حذف الرسالة</h3>
+            <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في حذف هذه الرسالة بشكل دائم؟</p>
+            <div className="flex justify-center gap-4 pt-4">
+                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500">
+                    إلغاء
+                </button>
+                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-red-500">
+                    حذف
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+const BlockUserConfirmationModal: React.FC<{ userName: string; onConfirm: () => void; onClose: () => void; }> = ({ userName, onConfirm, onClose }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
+            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حظر المستخدم</h3>
+            <p className="text-sky-200 text-center">
+                هل أنت متأكد أنك تريد حظر {userName}؟ لن ترى رسائلهم بعد الآن.
+            </p>
+            <div className="flex justify-center gap-4 pt-4">
+                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500">
+                    إلغاء
+                </button>
+                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-red-500">
+                    حظر
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+const DeleteConversationConfirmationModal: React.FC<{ onConfirm: () => void; onClose: () => void; }> = ({ onConfirm, onClose }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
+            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حذف المحادثة</h3>
+            <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في حذف هذه المحادثة من قائمتك؟</p>
+            <div className="flex justify-center gap-4 pt-4">
+                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500">
+                    إلغاء
+                </button>
+                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-red-500">
+                    حذف
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+
+const PrivateConversationsList: React.FC<{
+    user: firebase.User;
+    onConversationSelect: (user: UserProfile) => void;
+}> = ({ user, onConversationSelect }) => {
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
+
+    useEffect(() => {
+        const conversationsRef = db.collection('users').doc(user.uid).collection('conversations').orderBy('lastMessageTimestamp', 'desc');
+        const unsubscribe = conversationsRef.onSnapshot(snapshot => {
+            const convos = snapshot.docs.map(doc => ({
+                uid: doc.id,
+                ...doc.data(),
+            } as Conversation));
+            setConversations(convos);
+            setLoading(false);
+        }, err => {
+            console.error("Error fetching conversations:", err);
+            setLoading(false);
+        });
+        return unsubscribe;
+    }, [user.uid]);
+
+    const handleDelete = async () => {
+        if (!conversationToDelete) return;
+        try {
+            await db.collection('users').doc(user.uid).collection('conversations').doc(conversationToDelete.uid).delete();
+            setConversationToDelete(null);
+        } catch (error) {
+            console.error("Error deleting conversation:", error);
+        }
+    };
+    
+    if(loading) {
+        return <p className="text-center text-sky-400 py-8">جارِ تحميل المحادثات...</p>
+    }
+
+    if(conversations.length === 0) {
+        return <p className="text-center text-sky-400 py-8">لا توجد محادثات خاصة.</p>
+    }
+
+    return (
+        <div className="p-2 space-y-2">
+            {conversations.map(convo => (
+                <div key={convo.uid} className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50 group">
+                    <button onClick={() => onConversationSelect(convo)} className="flex-grow flex items-center gap-3 text-right">
+                         <img
+                            src={convo.photoURL || `https://ui-avatars.com/api/?name=${convo.displayName || ' '}&background=0284c7&color=fff&size=128`}
+                            alt={convo.displayName}
+                            className="w-12 h-12 rounded-full object-cover"
+                        />
+                        <span className="font-semibold">{convo.displayName}</span>
+                    </button>
+                    <button onClick={() => setConversationToDelete(convo)} className="p-2 text-red-500 hover:text-red-300 hover:bg-white/10 rounded-full transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">
+                        <TrashIcon className="w-5 h-5"/>
+                    </button>
+                </div>
+            ))}
+            {conversationToDelete && (
+                <DeleteConversationConfirmationModal 
+                    onConfirm={handleDelete}
+                    onClose={() => setConversationToDelete(null)}
+                />
+            )}
+        </div>
+    );
+};
+
+const EMOJI_REACTIONS = ['❤', '👍', '😪', '😞', '😧', '💯'];
+
+const ChatModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    user: firebase.User;
+    blockedUsers: string[];
+    onStartPrivateChat: (user: UserProfile) => void;
+    onBlockUser: (user: UserProfile) => void;
+    onUnblockUser: (uid: string) => void;
+}> = ({ isOpen, onClose, user, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser }) => {
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [loading, setLoading] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+    const [editText, setEditText] = useState('');
+    const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
+    const [messageForAction, setMessageForAction] = useState<Message | null>(null);
+    
+    const [reactingToMessageId, setReactingToMessageId] = useState<string | null>(null);
+    const reactionMenuRef = useRef<HTMLDivElement>(null);
+    
+    const [userForAction, setUserForAction] = useState<UserProfile | null>(null);
+    const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
+
+
+    useEffect(() => {
+        if (!isOpen) {
+            setActiveTab('public'); // Reset to public tab when closed
+            return;
+        }
+
+        const unsubscribe = db.collection('messages').orderBy('timestamp', 'asc').limit(100)
+            .onSnapshot(snapshot => {
+                const fetchedMessages = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                } as Message));
+                setMessages(fetchedMessages);
+            }, err => {
+                console.error("Error fetching messages: ", err);
+            });
+            
+        const handleClickOutside = (event: MouseEvent) => {
+            if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
+                setReactingToMessageId(null);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+
+        return () => {
+             unsubscribe();
+             document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (!editingMessage) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [messages, editingMessage]);
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newMessage.trim()) return;
+
+        const { uid, displayName, photoURL } = user;
+        setLoading(true);
+
+        try {
+            await db.collection('messages').add({
+                text: newMessage,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                uid,
+                displayName,
+                photoURL
+            });
+            setNewMessage('');
+        } catch (error) {
+            console.error("Error sending message:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const handleReaction = async (messageId: string, emoji: string) => {
+        const messageRef = db.collection('messages').doc(messageId);
+        const currentUserUid = user.uid;
+
+        try {
+            await db.runTransaction(async (transaction) => {
+                const messageDoc = await transaction.get(messageRef);
+                if (!messageDoc.exists) return;
+
+                const data = messageDoc.data() as Message;
+                const reactions = data.reactions ? { ...data.reactions } : {};
+                const uidsForEmoji = reactions[emoji] ? [...reactions[emoji]] : [];
+                const userIndex = uidsForEmoji.indexOf(currentUserUid);
+
+                if (userIndex > -1) {
+                    uidsForEmoji.splice(userIndex, 1);
+                } else {
+                    uidsForEmoji.push(currentUserUid);
+                }
+
+                if (uidsForEmoji.length > 0) {
+                    reactions[emoji] = uidsForEmoji;
+                } else {
+                    delete reactions[emoji];
+                }
+                
+                transaction.update(messageRef, { reactions });
+            });
+        } catch (error) {
+            console.error("Reaction transaction failed: ", error);
+        }
+        setReactingToMessageId(null);
+    };
+
+    const handleEdit = (msg: Message) => {
+        setEditingMessage(msg);
+        setEditText(msg.text);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingMessage || !editText.trim()) return;
+        setLoading(true);
+        try {
+            await db.collection('messages').doc(editingMessage.id).update({ text: editText });
+            setEditingMessage(null);
+            setEditText('');
+        } catch(e) {
+            console.error("Error saving edit:", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingMessage(null);
+        setEditText('');
+    };
+
+    const confirmDelete = async () => {
+        if (!messageToDelete) return;
+        try {
+            await db.collection('messages').doc(messageToDelete.id).delete();
+            setMessageToDelete(null);
+        } catch(e) {
+            console.error("Error deleting message:", e);
+        }
+    };
+
+    if (!isOpen) return null;
+    
+    const filteredMessages = messages.filter(msg => !blockedUsers.includes(msg.uid));
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300">
+            <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
+                <header className="p-4 border-b border-sky-400/30 flex-shrink-0">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold text-sky-200 text-shadow">الدردشة</h2>
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                            <XMarkIcon className="w-6 h-6"/>
+                        </button>
+                    </div>
+                    <div className="flex border border-sky-600 rounded-lg p-1">
+                        <button 
+                            onClick={() => setActiveTab('public')}
+                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'public' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                        >
+                            الدردشة العامة
+                        </button>
+                         <button 
+                            onClick={() => setActiveTab('private')}
+                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                        >
+                            المحادثات الخاصة
+                        </button>
+                    </div>
+                </header>
+                <main className="flex-grow overflow-y-auto">
+                   {activeTab === 'public' ? (
+                     <div className="p-4 space-y-4">
+                        {filteredMessages.map(msg => {
+                            const isMyMessage = msg.uid === user.uid;
+                            const targetUser: UserProfile = { uid: msg.uid, displayName: msg.displayName, photoURL: msg.photoURL };
+                            return (
+                                <div key={msg.id} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''}`}>
+                                     <div className="relative">
+                                        <button
+                                            onClick={() => !isMyMessage && setUserForAction(targetUser)}
+                                            disabled={isMyMessage}
+                                            className={!isMyMessage ? 'cursor-pointer' : 'cursor-default'}
+                                         >
+                                            <img 
+                                                src={msg.photoURL || `https://ui-avatars.com/api/?name=${msg.displayName || ' '}&background=0284c7&color=fff&size=128`} 
+                                                alt={msg.displayName || 'avatar'} 
+                                                className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                                            />
+                                        </button>
+                                    </div>
+                                    <div className={`flex flex-col w-full ${isMyMessage ? 'items-end' : 'items-start'}`}>
+                                        {editingMessage?.id === msg.id ? (
+                                            <div className="w-full max-w-xs md:max-w-md p-2 bg-sky-800 rounded-lg">
+                                                <textarea 
+                                                    value={editText}
+                                                    onChange={(e) => setEditText(e.target.value)}
+                                                    className="w-full bg-sky-900/80 rounded-md p-2 text-white resize-none focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                                    rows={3}
+                                                    autoFocus
+                                                />
+                                                <div className="flex justify-end gap-2 mt-2">
+                                                    <button onClick={handleCancelEdit} className="text-xs px-3 py-1 rounded-md text-white hover:bg-white/10">إلغاء</button>
+                                                    <button onClick={handleSaveEdit} disabled={loading || !editText.trim()} className="text-xs px-3 py-1 rounded-md bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-50">
+                                                        {loading ? 'جارِ الحفظ...' : 'حفظ'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className={`relative p-3 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}>
+                                                <div className={`absolute -top-3 flex items-center gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
+                                                    <button onClick={() => setReactingToMessageId(reactingToMessageId === msg.id ? null : msg.id)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
+                                                        <FaceSmileIcon className="w-4 h-4" />
+                                                    </button>
+                                                    {isMyMessage && (
+                                                        <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
+                                                            <DotsVerticalIcon className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                
+                                                {reactingToMessageId === msg.id && (
+                                                    <div ref={reactionMenuRef} className={`absolute top-[-40px] bg-slate-800 border border-slate-600 rounded-full shadow-lg z-10 p-1 flex gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
+                                                        {EMOJI_REACTIONS.map(emoji => (
+                                                            <button key={emoji} onClick={() => handleReaction(msg.id, emoji)} className="p-1 rounded-full hover:bg-slate-700 transition-colors text-xl">
+                                                                {emoji}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                <p className="text-sm font-bold text-sky-200 mb-1">{msg.displayName}</p>
+                                                <p className="text-white whitespace-pre-wrap">{msg.text}</p>
+                                            </div>
+                                        )}
+                                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                            <div className={`flex flex-wrap gap-1 mt-1 px-1 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
+                                                {/* FIX: Add Array.isArray check to ensure 'uids' is an array before accessing its properties, resolving type errors on properties like 'length' and 'includes'. */}
+                                                {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
+                                                    <button 
+                                                        key={emoji}
+                                                        onClick={() => handleReaction(msg.id, emoji)}
+                                                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors ${
+                                                            uids.includes(user.uid) 
+                                                            ? 'bg-sky-500 border border-sky-300 text-white' 
+                                                            : 'bg-slate-600/50 border border-transparent hover:bg-slate-600 text-sky-200'
+                                                        }`}
+                                                    >
+                                                        <span>{emoji}</span>
+                                                        <span className="font-semibold">{uids.length}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <p className="text-xs text-sky-500 mt-1 px-1">
+                                            {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit'}) : '...'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                        <div ref={messagesEndRef} />
+                    </div>
+                   ) : (
+                       <PrivateConversationsList user={user} onConversationSelect={onStartPrivateChat}/>
+                   )}
+                </main>
+                {activeTab === 'public' && (
+                    <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+                            <input
+                                type="text"
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                                placeholder="اكتب رسالتك..."
+                                className="flex-grow bg-sky-900/50 border border-sky-400/30 rounded-full py-2 px-4 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                                disabled={loading || !!editingMessage}
+                            />
+                            <button type="submit" className="bg-sky-600 text-white p-3 rounded-full hover:bg-sky-500 disabled:bg-sky-800 transition-colors" disabled={loading || !newMessage.trim() || !!editingMessage}>
+                                <SendIcon className="w-6 h-6"/>
+                            </button>
+                        </form>
+                    </footer>
+                )}
+            </div>
+             {messageToDelete && <DeleteMessageConfirmationModal onConfirm={confirmDelete} onClose={() => setMessageToDelete(null)} />}
+             {messageForAction && (
+                <MessageActionModal
+                    onClose={() => setMessageForAction(null)}
+                    onEdit={() => {
+                        handleEdit(messageForAction);
+                        setMessageForAction(null);
+                    }}
+                    onDelete={() => {
+                        setMessageToDelete(messageForAction);
+                        setMessageForAction(null);
+                    }}
+                />
+            )}
+            {userForAction && (
+                <UserActionModal
+                    userProfile={userForAction}
+                    onClose={() => setUserForAction(null)}
+                    isBlocked={blockedUsers.includes(userForAction.uid)}
+                    onStartPrivateChat={() => {
+                        onStartPrivateChat(userForAction);
+                        setUserForAction(null);
+                    }}
+                    onBlockUser={() => {
+                        onBlockUser(userForAction);
+                        setUserForAction(null);
+                    }}
+                    onUnblockUser={() => {
+                        onUnblockUser(userForAction.uid);
+                        setUserForAction(null);
+                    }}
+                />
+            )}
+        </div>
+    );
+};
+
+// --- Private Chat Component ---
+const PrivateChatModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    user: firebase.User;
+    otherUser: UserProfile;
+    isBlocked: boolean;
+    onBlockUser: (user: UserProfile) => void;
+    onUnblockUser: (uid: string) => void;
+}> = ({ isOpen, onClose, user, otherUser, isBlocked, onBlockUser, onUnblockUser }) => {
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [loading, setLoading] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const chatId = [user.uid, otherUser.uid].sort().join('_');
+    const messagesCollection = db.collection('private_chats').doc(chatId).collection('messages');
+
+    const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+    const [editText, setEditText] = useState('');
+    const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
+    const [messageForAction, setMessageForAction] = useState<Message | null>(null);
+    
+    const [reactingToMessageId, setReactingToMessageId] = useState<string | null>(null);
+    const reactionMenuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const unsubscribe = messagesCollection.orderBy('timestamp', 'asc').limit(100)
+            .onSnapshot(snapshot => {
+                const fetchedMessages = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                } as Message));
+                setMessages(fetchedMessages);
+            }, err => {
+                console.error("Error fetching private messages: ", err);
+            });
+            
+        const handleClickOutside = (event: MouseEvent) => {
+            if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
+                setReactingToMessageId(null);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+
+        return () => {
+             unsubscribe();
+             document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isOpen, chatId]);
+
+    useEffect(() => {
+        if (!editingMessage) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [messages, editingMessage]);
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newMessage.trim() || isBlocked) return;
+
+        const { uid, displayName, photoURL, email } = user;
+        setLoading(true);
+
+        try {
+            // 1. Add the message to the collection
+            await messagesCollection.add({
+                text: newMessage,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                uid,
+                displayName,
+                photoURL
+            });
+             setNewMessage('');
+
+            // 2. Update conversation metadata for both users
+            const timestamp = firebase.firestore.FieldValue.serverTimestamp();
+            
+            const myProfileForOther = {
+                displayName: displayName || `مستخدم ${uid.substring(0,5)}`,
+                photoURL: photoURL,
+                lastMessageTimestamp: timestamp,
+                ...(email && { email }),
+            };
+
+            const otherProfileForMe = {
+                displayName: otherUser.displayName,
+                photoURL: otherUser.photoURL,
+                lastMessageTimestamp: timestamp,
+                ...(otherUser.email && { email: otherUser.email }),
+            };
+            
+            const userConversationsRef = db.collection('users').doc(uid).collection('conversations').doc(otherUser.uid);
+            const otherUserConversationsRef = db.collection('users').doc(otherUser.uid).collection('conversations').doc(uid);
+
+            await userConversationsRef.set(otherProfileForMe, { merge: true });
+            await otherUserConversationsRef.set(myProfileForOther, { merge: true });
+
+        } catch (error) {
+            console.error("Error sending private message:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const handleReaction = async (messageId: string, emoji: string) => {
+        const messageRef = messagesCollection.doc(messageId);
+        const currentUserUid = user.uid;
+
+        try {
+            await db.runTransaction(async (transaction) => {
+                const messageDoc = await transaction.get(messageRef);
+                if (!messageDoc.exists) return;
+
+                const data = messageDoc.data() as Message;
+                const reactions = data.reactions ? { ...data.reactions } : {};
+                const uidsForEmoji = reactions[emoji] ? [...reactions[emoji]] : [];
+                const userIndex = uidsForEmoji.indexOf(currentUserUid);
+
+                if (userIndex > -1) {
+                    uidsForEmoji.splice(userIndex, 1);
+                } else {
+                    uidsForEmoji.push(currentUserUid);
+                }
+
+                if (uidsForEmoji.length > 0) {
+                    reactions[emoji] = uidsForEmoji;
+                } else {
+                    delete reactions[emoji];
+                }
+                
+                transaction.update(messageRef, { reactions });
+            });
+        } catch (error) {
+            console.error("Reaction transaction failed: ", error);
+        }
+        setReactingToMessageId(null);
+    };
+
+    const handleEdit = (msg: Message) => {
+        setEditingMessage(msg);
+        setEditText(msg.text);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingMessage || !editText.trim()) return;
+        setLoading(true);
+        try {
+            await messagesCollection.doc(editingMessage.id).update({ text: editText });
+            setEditingMessage(null);
+            setEditText('');
+        } catch(e) {
+            console.error("Error saving edit:", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingMessage(null);
+        setEditText('');
+    };
+
+    const confirmDelete = async () => {
+        if (!messageToDelete) return;
+        try {
+            await messagesCollection.doc(messageToDelete.id).delete();
+            setMessageToDelete(null);
+        } catch(e) {
+            console.error("Error deleting message:", e);
+        }
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[55] transition-opacity duration-300">
+            <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
+                <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                         <img 
+                            src={otherUser.photoURL || `https://ui-avatars.com/api/?name=${otherUser.displayName || ' '}&background=0284c7&color=fff&size=128`} 
+                            alt={otherUser.displayName || 'avatar'} 
+                            className="w-10 h-10 rounded-full object-cover"
+                        />
+                        <h2 className="text-lg font-bold text-sky-200 text-shadow truncate">
+                            {otherUser.displayName}
+                        </h2>
+                    </div>
+                    <div className="flex items-center gap-2">
+                         {isBlocked ? (
+                            <button onClick={() => onUnblockUser(otherUser.uid)} className="p-2 rounded-full hover:bg-white/10 text-green-400 transition-colors" title="إلغاء حظر المستخدم">
+                                <UserPlusIcon className="w-6 h-6"/>
+                            </button>
+                        ) : (
+                            <button onClick={() => onBlockUser(otherUser)} className="p-2 rounded-full hover:bg-white/10 text-red-400 transition-colors" title="حظر المستخدم">
+                                <UserMinusIcon className="w-6 h-6"/>
+                            </button>
+                        )}
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                            <XMarkIcon className="w-6 h-6"/>
+                        </button>
+                    </div>
+                </header>
+                <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                    {messages.map(msg => {
+                        const isMyMessage = msg.uid === user.uid;
+                        return (
+                             <div key={msg.id} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''}`}>
+                                <img 
+                                    src={msg.photoURL || `https://ui-avatars.com/api/?name=${msg.displayName || ' '}&background=0284c7&color=fff&size=128`} 
+                                    alt={msg.displayName || 'avatar'} 
+                                    className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                                />
+                                <div className={`flex flex-col w-full ${isMyMessage ? 'items-end' : 'items-start'}`}>
+                                    {editingMessage?.id === msg.id ? (
+                                        <div className="w-full max-w-xs md:max-w-md p-2 bg-sky-800 rounded-lg">
+                                            <textarea 
+                                                value={editText}
+                                                onChange={(e) => setEditText(e.target.value)}
+                                                className="w-full bg-sky-900/80 rounded-md p-2 text-white resize-none focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                                rows={3}
+                                                autoFocus
+                                            />
+                                            <div className="flex justify-end gap-2 mt-2">
+                                                <button onClick={handleCancelEdit} className="text-xs px-3 py-1 rounded-md text-white hover:bg-white/10">إلغاء</button>
+                                                <button onClick={handleSaveEdit} disabled={loading || !editText.trim()} className="text-xs px-3 py-1 rounded-md bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-50">
+                                                    {loading ? 'جارِ الحفظ...' : 'حفظ'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className={`relative p-3 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}>
+                                            <div className={`absolute -top-3 flex items-center gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
+                                                <button onClick={() => setReactingToMessageId(reactingToMessageId === msg.id ? null : msg.id)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
+                                                    <FaceSmileIcon className="w-4 h-4" />
+                                                </button>
+                                                {isMyMessage && (
+                                                    <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
+                                                        <DotsVerticalIcon className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                            
+                                            {reactingToMessageId === msg.id && (
+                                                <div ref={reactionMenuRef} className={`absolute top-[-40px] bg-slate-800 border border-slate-600 rounded-full shadow-lg z-10 p-1 flex gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
+                                                    {EMOJI_REACTIONS.map(emoji => (
+                                                        <button key={emoji} onClick={() => handleReaction(msg.id, emoji)} className="p-1 rounded-full hover:bg-slate-700 transition-colors text-xl">
+                                                            {emoji}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <p className="text-white whitespace-pre-wrap">{msg.text}</p>
+                                        </div>
+                                    )}
+                                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                        <div className={`flex flex-wrap gap-1 mt-1 px-1 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
+                                            {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
+                                                <button 
+                                                    key={emoji}
+                                                    onClick={() => handleReaction(msg.id, emoji)}
+                                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors ${
+                                                        Array.isArray(uids) && uids.includes(user.uid) 
+                                                        ? 'bg-sky-500 border border-sky-300 text-white' 
+                                                        : 'bg-slate-600/50 border border-transparent hover:bg-slate-600 text-sky-200'
+                                                    }`}
+                                                >
+                                                    <span>{emoji}</span>
+                                                    <span className="font-semibold">{uids.length}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <p className="text-xs text-sky-500 mt-1 px-1">
+                                        {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit'}) : '...'}
+                                    </p>
+                                </div>
+                            </div>
+                        )
+                    })}
+                    <div ref={messagesEndRef} />
+                </main>
+                <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
+                    {isBlocked ? (
+                        <div className="text-center text-red-400 bg-red-900/50 p-3 rounded-lg flex items-center justify-center gap-4">
+                            <span>لقد حظرت هذا المستخدم.</span>
+                            <button onClick={() => onUnblockUser(otherUser.uid)} className="font-bold text-green-300 hover:underline">إلغاء الحظر</button>
+                        </div>
+                    ) : (
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+                            <input
+                                type="text"
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                                placeholder="اكتب رسالتك..."
+                                className="flex-grow bg-sky-900/50 border border-sky-400/30 rounded-full py-2 px-4 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                                disabled={loading}
+                            />
+                            <button type="submit" className="bg-sky-600 text-white p-3 rounded-full hover:bg-sky-500 disabled:bg-sky-800 transition-colors" disabled={loading || !newMessage.trim()}>
+                                <SendIcon className="w-6 h-6"/>
+                            </button>
+                        </form>
+                    )}
+                </footer>
+            </div>
+             {messageToDelete && <DeleteMessageConfirmationModal onConfirm={confirmDelete} onClose={() => setMessageToDelete(null)} />}
+             {messageForAction && (
+                <MessageActionModal
+                    onClose={() => setMessageForAction(null)}
+                    onEdit={() => {
+                        handleEdit(messageForAction);
+                        setMessageForAction(null);
+                    }}
+                    onDelete={() => {
+                        setMessageToDelete(messageForAction);
+                        setMessageForAction(null);
+                    }}
+                />
+            )}
+        </div>
+    );
+};
+
 // --- Logged In Layout ---
 const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [activeTab, setActiveTab] = useState<LoggedInView>('home');
@@ -1227,48 +2470,60 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [showSetDateModal, setShowSetDateModal] = useState(false);
     const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
     const [showDeleteImageConfirmModal, setShowDeleteImageConfirmModal] = useState(false);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [showChat, setShowChat] = useState(false);
+    
+    const [privateChatTargetUser, setPrivateChatTargetUser] = useState<UserProfile | null>(null);
+    const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
+    const [userToBlock, setUserToBlock] = useState<UserProfile | null>(null);
 
     const isDeveloper = DEVELOPER_UIDS.includes(user.uid);
 
     useEffect(() => {
         let unsubscribeCounterImage: () => void;
         let unsubscribeStartDate: () => void;
+        let unsubscribeUser: () => void;
     
-        // Fetch/subscribe to the global counter image
         unsubscribeCounterImage = db.collection('app_config').doc('main')
             .onSnapshot(doc => {
                 const data = doc.data();
                 setCounterImage(data?.imageUrl || null);
-            }, err => {
-                console.error("Error fetching counter image: ", err);
-            });
+            }, err => console.error("Error fetching counter image: ", err));
     
-        // Fetch/subscribe to the user-specific start date
         if (user.isAnonymous) {
-            // For guest users, use localStorage
             const storedDate = localStorage.getItem('counterStartDate');
-            if (storedDate) {
-                setStartDate(new Date(storedDate));
-            }
+            if (storedDate) setStartDate(new Date(storedDate));
         } else {
-            // For registered users, use Firestore
-            unsubscribeStartDate = db.collection('users').doc(user.uid)
-                .onSnapshot(doc => {
-                    const data = doc.data();
-                    if (data?.counterStartDate) {
-                        setStartDate(new Date(data.counterStartDate));
-                    } else {
-                        setStartDate(null); // Ensure it's null if not set in Firestore
-                    }
-                }, err => {
-                    console.error("Error fetching start date: ", err);
-                });
+            const userRef = db.collection('users').doc(user.uid);
+            unsubscribeStartDate = userRef.onSnapshot(doc => {
+                const data = doc.data();
+                if (data?.counterStartDate) {
+                    setStartDate(new Date(data.counterStartDate));
+                } else {
+                    setStartDate(null);
+                }
+            }, err => console.error("Error fetching start date: ", err));
+            
+            unsubscribeUser = userRef.onSnapshot(doc => {
+                setBlockedUsers(doc.data()?.blockedUsers || []);
+            }, err => console.error("Error fetching user data: ", err));
         }
+        
+        const unsubscribeNotifications = db.collection('notifications').orderBy('timestamp', 'desc')
+            .onSnapshot(snapshot => {
+                const fetchedNotifications = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                } as Notification));
+                setNotifications(fetchedNotifications);
+            }, err => console.error("Error fetching notifications: ", err));
     
-        // Cleanup subscriptions on component unmount
         return () => {
             if (unsubscribeCounterImage) unsubscribeCounterImage();
             if (unsubscribeStartDate) unsubscribeStartDate();
+            if (unsubscribeUser) unsubscribeUser();
+            unsubscribeNotifications();
         };
     }, [user]);
 
@@ -1280,8 +2535,22 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
         }
     };
     
+    const handleBlockUser = async () => {
+        if (!userToBlock) return;
+        const targetUid = userToBlock.uid;
+        setUserToBlock(null);
+        await db.collection('users').doc(user.uid).update({
+            blockedUsers: firebase.firestore.FieldValue.arrayUnion(targetUid)
+        });
+    };
+    
+    const handleUnblockUser = async (targetUid: string) => {
+        await db.collection('users').doc(user.uid).update({
+            blockedUsers: firebase.firestore.FieldValue.arrayRemove(targetUid)
+        });
+    };
+
     const updateStartDate = async (newDate: Date) => {
-        // Optimistically update the state for a smooth UI response
         setStartDate(newDate);
 
         if (user.isAnonymous) {
@@ -1294,14 +2563,11 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
                 );
             } catch (error) {
                 console.error("Error updating start date in Firestore: ", error);
-                // Optionally handle the error, e.g., show a message to the user
             }
         }
     };
 
-    const handleResetCounter = () => {
-        setShowResetConfirmModal(true);
-    };
+    const handleResetCounter = () => setShowResetConfirmModal(true);
 
     const confirmResetCounter = () => {
         updateStartDate(new Date());
@@ -1309,9 +2575,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
         setActiveTab('home');
     };
 
-    const handleStartCounter = () => {
-        updateStartDate(new Date());
-    };
+    const handleStartCounter = () => updateStartDate(new Date());
 
     const handleSetNewDate = (dateString: string) => {
         const [year, month, day] = dateString.split('-').map(Number);
@@ -1326,7 +2590,6 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const handleSetCounterImage = async (url: string) => {
         try {
             await db.collection('app_config').doc('main').set({ imageUrl: url }, { merge: true });
-            // The onSnapshot listener will automatically update the state
         } catch (error) {
             console.error("Error setting counter image in Firestore: ", error);
         }
@@ -1338,7 +2601,6 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             await db.collection('app_config').doc('main').update({
                 imageUrl: firebase.firestore.FieldValue.delete()
             });
-            // The onSnapshot listener will automatically update the state
         } catch (error) {
             console.error("Error deleting counter image from Firestore: ", error);
         }
@@ -1347,9 +2609,9 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const renderActiveView = () => {
         switch (activeTab) {
             case 'home':
-                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} />;
+                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} />;
             case 'settings':
-                return <SettingsView user={user} handleSignOut={handleSignOut} />;
+                return <SettingsView user={user} handleSignOut={handleSignOut} blockedUsers={blockedUsers} handleUnblockUser={handleUnblockUser} />;
             case 'counter-settings':
                 return <CounterSettingsView 
                     setActiveTab={setActiveTab} 
@@ -1361,7 +2623,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
                     isDeveloper={isDeveloper}
                 />;
             default:
-                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} />;
+                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} />;
         }
     };
 
@@ -1373,6 +2635,34 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             {showSetDateModal && <SetStartDateModal onClose={() => setShowSetDateModal(false)} onSave={handleSetNewDate}/>}
             {showResetConfirmModal && <ResetConfirmationModal onConfirm={confirmResetCounter} onClose={() => setShowResetConfirmModal(false)} />}
             {showDeleteImageConfirmModal && <DeleteImageConfirmationModal onConfirm={confirmDeleteCounterImage} onClose={() => setShowDeleteImageConfirmModal(false)} />}
+            <NotificationsModal isOpen={showNotifications} onClose={() => setShowNotifications(false)} notifications={notifications} isDeveloper={isDeveloper} />
+            <ChatModal 
+                isOpen={showChat} 
+                onClose={() => setShowChat(false)} 
+                user={user} 
+                blockedUsers={blockedUsers}
+                onStartPrivateChat={(targetUser) => { setPrivateChatTargetUser(targetUser); setShowChat(false); }}
+                onBlockUser={(targetUser) => setUserToBlock(targetUser)}
+                onUnblockUser={handleUnblockUser}
+            />
+            {privateChatTargetUser && (
+                <PrivateChatModal
+                    isOpen={!!privateChatTargetUser}
+                    onClose={() => setPrivateChatTargetUser(null)}
+                    user={user}
+                    otherUser={privateChatTargetUser}
+                    isBlocked={blockedUsers.includes(privateChatTargetUser.uid)}
+                    onBlockUser={(targetUser) => setUserToBlock(targetUser)}
+                    onUnblockUser={handleUnblockUser}
+                />
+            )}
+            {userToBlock && (
+                <BlockUserConfirmationModal 
+                    userName={userToBlock.displayName}
+                    onConfirm={handleBlockUser}
+                    onClose={() => setUserToBlock(null)}
+                />
+            )}
             <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} />
         </div>
     );
@@ -1419,23 +2709,57 @@ const App: React.FC = () => {
 
         const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
             if (currentUser && currentUser.isAnonymous) {
-                const savedProfileJSON = localStorage.getItem('guestProfile');
-                if (savedProfileJSON) {
+                let profileUpdated = false;
+
+                // If guest has no display name, they are new. Assign a numbered name.
+                if (!currentUser.displayName) {
+                    const counterRef = db.collection('app_config').doc('guest_counter');
                     try {
-                        const savedProfile = JSON.parse(savedProfileJSON);
-                        if (currentUser.displayName !== savedProfile.displayName || currentUser.photoURL !== savedProfile.photoURL) {
-                            await currentUser.updateProfile({
-                                displayName: savedProfile.displayName,
-                                photoURL: savedProfile.photoURL,
-                            });
-                            // Reload the user to get the updated profile data immediately
-                            await currentUser.reload();
-                        }
+                        const newGuestName = await db.runTransaction(async (transaction) => {
+                            const counterDoc = await transaction.get(counterRef);
+                            const newCount = (counterDoc.data()?.count || 0) + 1;
+                            transaction.set(counterRef, { count: newCount });
+                            return `زائر ${newCount}`;
+                        });
+                        await currentUser.updateProfile({ displayName: newGuestName });
+                        await db.collection('users').doc(currentUser.uid).set({
+                            displayName: newGuestName,
+                            photoURL: null,
+                            isAnonymous: true,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        });
+                        localStorage.setItem('guestProfile', JSON.stringify({ displayName: newGuestName, photoURL: null }));
+                        profileUpdated = true;
                     } catch (e) {
-                        console.error("Error processing guest profile from localStorage:", e);
+                        console.error("Guest name transaction failed:", e);
+                        // Assign a generic name as a fallback
+                        await currentUser.updateProfile({ displayName: 'زائر' });
+                        profileUpdated = true;
+                    }
+                } else {
+                    // Existing guest, sync with localStorage which is updated from settings
+                    const savedProfileJSON = localStorage.getItem('guestProfile');
+                    if (savedProfileJSON) {
+                        try {
+                            const savedProfile = JSON.parse(savedProfileJSON);
+                            if (currentUser.displayName !== savedProfile.displayName || currentUser.photoURL !== savedProfile.photoURL) {
+                                await currentUser.updateProfile({
+                                    displayName: savedProfile.displayName,
+                                    photoURL: savedProfile.photoURL,
+                                });
+                                profileUpdated = true;
+                            }
+                        } catch (e) {
+                            console.error("Error processing guest profile from localStorage:", e);
+                        }
                     }
                 }
+                
+                if (profileUpdated) {
+                    await currentUser.reload();
+                }
             }
+
             // Use auth.currentUser because `currentUser` from callback might be stale after a reload
             setUser(auth.currentUser);
             setLoading(false);
