@@ -1076,7 +1076,7 @@ const BlockedUsersManager: React.FC<{ blockedUids: string[]; onUnblock: (uid: st
                                 <img
                                     src={profile.photoURL || `https://ui-avatars.com/api/?name=${profile.displayName || ' '}&background=0284c7&color=fff&size=128`}
                                     alt={profile.displayName}
-                                    className="w-10 h-10 rounded-full object-cover"
+                                    className="w-10 h-10 rounded-full object-cover flex-shrink-0"
                                 />
                                 <span>{profile.displayName}</span>
                             </div>
@@ -1864,11 +1864,11 @@ const PrivateConversationsList: React.FC<{
             {conversations.map(convo => (
                 <div key={convo.uid} className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50 group">
                     <button onClick={() => onConversationSelect(convo)} className="flex-grow flex items-center gap-3 text-right">
-                         <div className="relative">
+                         <div className="relative flex-shrink-0">
                             <img
                                 src={convo.photoURL || `https://ui-avatars.com/api/?name=${convo.displayName || ' '}&background=0284c7&color=fff&size=128`}
                                 alt={convo.displayName}
-                                className="w-12 h-12 rounded-full object-cover"
+                                className="w-12 h-12 rounded-full object-cover flex-shrink-0"
                             />
                             {convo.hasUnread && <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
                          </div>
@@ -2216,7 +2216,7 @@ const ChatModal: React.FC<{
                                             <img 
                                                 src={msg.photoURL || `https://ui-avatars.com/api/?name=${msg.displayName || ' '}&background=0284c7&color=fff&size=128`} 
                                                 alt={msg.displayName || 'avatar'} 
-                                                className="w-10 h-10 rounded-full object-cover"
+                                                className="w-10 h-10 rounded-full object-cover flex-shrink-0"
                                             />
                                         </button>
                                     </div>
@@ -2549,7 +2549,7 @@ const PrivateChatModal: React.FC<{
                          <img 
                             src={otherUser.photoURL || `https://ui-avatars.com/api/?name=${otherUser.displayName || ' '}&background=0284c7&color=fff&size=128`} 
                             alt={otherUser.displayName || 'avatar'} 
-                            className="w-10 h-10 rounded-full object-cover"
+                            className="w-10 h-10 rounded-full object-cover flex-shrink-0"
                         />
                         <h2 className="text-lg font-bold text-sky-200 text-shadow truncate">
                             {otherUser.displayName}
@@ -2719,38 +2719,44 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
 
     useEffect(() => {
         let unsubscribeCounterImage: () => void;
-        let unsubscribeStartDate: () => void;
         let unsubscribeUser: () => void;
         let unsubscribeConvos: () => void;
         let unsubscribeNotifications: () => void;
-
+    
         unsubscribeCounterImage = db.collection('app_config').doc('main')
             .onSnapshot(doc => {
                 setCounterImage(doc.data()?.imageUrl || null);
             }, err => console.error("Error fetching counter image: ", err));
     
-        if (user.isAnonymous) {
-            const storedDate = localStorage.getItem('counterStartDate');
-            if (storedDate) setStartDate(new Date(storedDate));
-        } else {
-            const userRef = db.collection('users').doc(user.uid);
-            unsubscribeUser = userRef.onSnapshot(doc => {
-                const data = doc.data();
+        // Unified listener for ALL users to ensure real-time profile updates (e.g., isMuted status).
+        const userRef = db.collection('users').doc(user.uid);
+        unsubscribeUser = userRef.onSnapshot(doc => {
+            const data = doc.data();
+            
+            // Handle counter start date based on user type
+            if (user.isAnonymous) {
+                const storedDate = localStorage.getItem('counterStartDate');
+                if (storedDate) setStartDate(new Date(storedDate));
+                else setStartDate(null);
+            } else {
                 if (data?.counterStartDate) {
                     setStartDate(new Date(data.counterStartDate));
                 } else {
                     setStartDate(null);
                 }
-                setBlockedUsers(data?.blockedUsers || []);
-                setCurrentUserProfile({ uid: doc.id, ...data } as UserProfile);
-            }, err => console.error("Error fetching user data: ", err));
-
-            unsubscribeConvos = db.collection('users').doc(user.uid).collection('conversations')
-                .where('hasUnread', '==', true).limit(1)
-                .onSnapshot(snapshot => {
-                    setHasUnreadPrivateMessages(!snapshot.empty);
-                }, err => console.error("Error fetching unread status:", err));
-        }
+            }
+    
+            // Update profile state from Firestore for all users
+            setBlockedUsers(data?.blockedUsers || []);
+            setCurrentUserProfile({ uid: doc.id, ...data } as UserProfile);
+        }, err => console.error("Error fetching user data: ", err));
+    
+        // Listen for private message notifications for all users
+        unsubscribeConvos = db.collection('users').doc(user.uid).collection('conversations')
+            .where('hasUnread', '==', true).limit(1)
+            .onSnapshot(snapshot => {
+                setHasUnreadPrivateMessages(!snapshot.empty);
+            }, err => console.error("Error fetching unread status:", err));
         
         unsubscribeNotifications = db.collection('notifications').orderBy('timestamp', 'desc')
             .onSnapshot(snapshot => {
@@ -2763,7 +2769,6 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     
         return () => {
             if (unsubscribeCounterImage) unsubscribeCounterImage();
-            if (unsubscribeStartDate) unsubscribeStartDate();
             if (unsubscribeUser) unsubscribeUser();
             if (unsubscribeConvos) unsubscribeConvos();
             if (unsubscribeNotifications) unsubscribeNotifications();
