@@ -2005,7 +2005,7 @@ const ChatModal: React.FC<{
         if (!newMessage.trim()) return;
 
         if (currentUserProfile?.isMuted) {
-            alert('أنت مكتوم ولا يمكنك إرسال رسائل.');
+            alert('أنت مكتوم حاليًا، لا يمكنك إرسال الرسائل.');
             return;
         }
 
@@ -2207,7 +2207,7 @@ const ChatModal: React.FC<{
                             
                             return (
                                 <div key={msg.id} id={`message-${msg.id}`} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''} ${isBlockedByMe || bannedUids.includes(msg.uid) ? 'opacity-50' : ''}`}>
-                                     <div className="relative">
+                                     <div className="relative flex-shrink-0">
                                         <button
                                             onClick={() => !isMyMessage && setUserForAction(profile)}
                                             disabled={isMyMessage}
@@ -2216,7 +2216,7 @@ const ChatModal: React.FC<{
                                             <img 
                                                 src={msg.photoURL || `https://ui-avatars.com/api/?name=${msg.displayName || ' '}&background=0284c7&color=fff&size=128`} 
                                                 alt={msg.displayName || 'avatar'} 
-                                                className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                                                className="w-10 h-10 rounded-full object-cover"
                                             />
                                         </button>
                                     </div>
@@ -2240,14 +2240,8 @@ const ChatModal: React.FC<{
                                         ) : (
                                             <div
                                                 onContextMenu={(e) => { e.preventDefault(); setReactingToMessageId(msg.id); }}
-                                                className={`relative p-3 pb-5 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}
+                                                className={`relative p-3 pb-8 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}
                                             >
-                                                <div className={`absolute -top-3 ${isMyMessage ? 'left-0' : 'right-0'}`}>
-                                                    <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
-                                                        <DotsVerticalIcon className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                                
                                                 {reactingToMessageId === msg.id && (
                                                     <div ref={reactionMenuRef} className={`absolute top-[-40px] bg-slate-800 border border-slate-600 rounded-full shadow-lg z-10 p-1 flex gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
                                                         {EMOJI_REACTIONS.map(emoji => (
@@ -2262,7 +2256,7 @@ const ChatModal: React.FC<{
                                                 <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
                                                 
                                                 {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                                    <div className={`absolute bottom-0 flex flex-wrap gap-1 px-1 z-10 ${isMyMessage ? 'left-1' : 'right-1'}`}>
+                                                    <div className={`absolute bottom-1 flex flex-row flex-wrap gap-1 px-2 z-10 ${isMyMessage ? 'left-1' : 'right-1'}`}>
                                                         {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
                                                             <button 
                                                                 key={emoji}
@@ -2284,6 +2278,14 @@ const ChatModal: React.FC<{
                                         <p className="text-xs text-sky-500 mt-1 px-1">
                                             {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit'}) : '...'}
                                         </p>
+                                    </div>
+                                    <div className="flex-shrink-0 self-center transition-opacity opacity-0 group-hover:opacity-100 flex items-center">
+                                        <button onClick={() => setReactingToMessageId(msg.id)} className="p-2 rounded-full text-sky-300 hover:bg-sky-800/50" aria-label="Add reaction">
+                                            <FaceSmileIcon className="w-5 h-5" />
+                                        </button>
+                                        <button onClick={() => setMessageForAction(msg)} className="p-2 rounded-full text-sky-300 hover:bg-sky-800/50" aria-label="Message options">
+                                            <DotsVerticalIcon className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )
@@ -2598,14 +2600,8 @@ const PrivateChatModal: React.FC<{
                                     ) : (
                                         <div
                                             onContextMenu={(e) => { e.preventDefault(); setReactingToMessageId(msg.id); }}
-                                            className={`relative p-3 pb-5 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}
+                                            className={`relative p-3 pb-8 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}
                                         >
-                                            <div className={`absolute -top-3 ${isMyMessage ? 'left-0' : 'right-0'}`}>
-                                                <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
-                                                    <DotsVerticalIcon className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                            
                                             {reactingToMessageId === msg.id && (
                                                 <div ref={reactionMenuRef} className={`absolute top-[-40px] bg-slate-800 border border-slate-600 rounded-full shadow-lg z-10 p-1 flex gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
                                                     {EMOJI_REACTIONS.map(emoji => (
@@ -2618,7 +2614,7 @@ const PrivateChatModal: React.FC<{
                                             <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
                                             
                                             {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                                <div className={`absolute bottom-0 flex flex-wrap gap-1 px-1 z-10 ${isMyMessage ? 'left-1' : 'right-1'}`}>
+                                                <div className={`absolute bottom-1 flex flex-row flex-wrap gap-1 px-2 z-10 ${isMyMessage ? 'left-1' : 'right-1'}`}>
                                                     {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
                                                         <button 
                                                             key={emoji}
@@ -2640,6 +2636,14 @@ const PrivateChatModal: React.FC<{
                                     <p className="text-xs text-sky-500 mt-1 px-1">
                                         {msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit'}) : '...'}
                                     </p>
+                                </div>
+                                <div className="flex-shrink-0 self-center transition-opacity opacity-0 group-hover:opacity-100 flex items-center">
+                                    <button onClick={() => setReactingToMessageId(msg.id)} className="p-2 rounded-full text-sky-300 hover:bg-sky-800/50" aria-label="Add reaction">
+                                        <FaceSmileIcon className="w-5 h-5" />
+                                    </button>
+                                    <button onClick={() => setMessageForAction(msg)} className="p-2 rounded-full text-sky-300 hover:bg-sky-800/50" aria-label="Message options">
+                                        <DotsVerticalIcon className="w-5 h-5" />
+                                    </button>
                                 </div>
                             </div>
                         )
