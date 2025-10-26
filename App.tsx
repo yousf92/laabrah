@@ -51,13 +51,14 @@ interface UserProfile {
     displayName: string;
     photoURL: string | null;
     email?: string;
+    isAdmin?: boolean;
+    isMuted?: boolean;
 }
 
 interface Conversation extends Omit<UserProfile, 'uid'> {
     uid: string;
     hasUnread?: boolean;
 }
-
 
 interface Notification {
     id: string;
@@ -74,6 +75,13 @@ interface Message {
     displayName: string;
     photoURL: string | null;
     reactions?: { [emoji: string]: string[] };
+}
+
+interface PinnedMessage {
+    id: string;
+    text: string;
+    uid: string;
+    displayName: string;
 }
 
 interface ViewProps {
@@ -278,6 +286,29 @@ const UserPlusIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const PinIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.5V22H12.5V16H18V14L16,12Z" />
+    </svg>
+);
+
+const CopyIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+);
+
+const ShieldExclamationIcon: React.FC<{ className?: string }> = ({ className }) => ( 
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+);
+
+const SpeakerXMarkIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-3l4.707-4.707C10.923 3.663 12 4.108 12 5v14c0 .892-1.077 1.337-1.707.707L5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l2.121-2.121" />
+    </svg>
+);
 
 // --- UI Components ---
 const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
@@ -447,6 +478,8 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
                     email: email,
                     photoURL: null,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    isAdmin: false,
+                    isMuted: false,
                 });
             }
             setSubmitted(true);
@@ -1632,21 +1665,41 @@ const NotificationsModal: React.FC<{
 // --- Chat Component ---
 const MessageActionModal: React.FC<{
     onClose: () => void;
-    onEdit: () => void;
-    onDelete: () => void;
-}> = ({ onClose, onEdit, onDelete }) => (
+    onEdit?: () => void;
+    onDelete?: () => void;
+    onPin?: () => void;
+    onCopy: () => void;
+    isPinned: boolean;
+    canPin: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+}> = ({ onClose, onEdit, onDelete, onPin, onCopy, isPinned, canPin, canEdit, canDelete }) => (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onClose}>
         <div className="w-full max-w-sm bg-sky-950/90 border border-sky-500/50 rounded-lg p-6 space-y-4 text-white" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-xl font-bold text-sky-300 text-center">إجراءات الرسالة</h3>
             <div className="flex flex-col gap-4 pt-4">
-                <button onClick={onEdit} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
-                    <PencilIcon className="w-6 h-6 text-yellow-300"/>
-                    <span>تعديل</span>
+                <button onClick={onCopy} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                    <CopyIcon className="w-6 h-6 text-sky-300"/>
+                    <span>نسخ النص</span>
                 </button>
-                <button onClick={onDelete} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
-                    <TrashIcon className="w-6 h-6 text-red-400"/>
-                    <span className="text-red-400">حذف</span>
-                </button>
+                {canPin && onPin && (
+                    <button onClick={onPin} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                        <PinIcon className="w-6 h-6 text-teal-300"/>
+                        <span>{isPinned ? 'إلغاء تثبيت الرسالة' : 'تثبيت الرسالة'}</span>
+                    </button>
+                )}
+                {canEdit && onEdit && (
+                    <button onClick={onEdit} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                        <PencilIcon className="w-6 h-6 text-yellow-300"/>
+                        <span>تعديل</span>
+                    </button>
+                )}
+                {canDelete && onDelete && (
+                    <button onClick={onDelete} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
+                        <TrashIcon className="w-6 h-6 text-red-400"/>
+                        <span className="text-red-400">حذف</span>
+                    </button>
+                )}
             </div>
         </div>
     </div>
@@ -1659,7 +1712,15 @@ const UserActionModal: React.FC<{
     onBlockUser: () => void;
     onUnblockUser: () => void;
     isBlocked: boolean;
-}> = ({ userProfile, onClose, onStartPrivateChat, onBlockUser, onUnblockUser, isBlocked }) => (
+    isCurrentUserAdmin: boolean;
+    currentUserUid: string;
+    onToggleAdmin: () => void;
+    onToggleMute: () => void;
+    onToggleBan: () => void;
+    isBanned: boolean;
+}> = ({ userProfile, onClose, onStartPrivateChat, onBlockUser, onUnblockUser, isBlocked, isCurrentUserAdmin, currentUserUid, onToggleAdmin, onToggleMute, onToggleBan, isBanned }) => {
+    const canTakeAdminAction = isCurrentUserAdmin && userProfile.uid !== currentUserUid && !DEVELOPER_UIDS.includes(userProfile.uid);
+    return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onClose}>
         <div className="w-full max-w-sm bg-sky-950/90 border border-sky-500/50 rounded-lg p-6 space-y-4 text-white" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-xl font-bold text-sky-300 text-center truncate">خيارات لـ {userProfile.displayName}</h3>
@@ -1668,7 +1729,7 @@ const UserActionModal: React.FC<{
                     <PaperAirplaneIcon className="w-6 h-6 text-sky-300"/>
                     <span>إرسال رسالة خاصة</span>
                 </button>
-                {!isBlocked ? (
+                 {!isBlocked ? (
                     <button onClick={onBlockUser} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
                         <UserMinusIcon className="w-6 h-6 text-red-400"/>
                         <span className="text-red-400">حظر المستخدم</span>
@@ -1679,13 +1740,31 @@ const UserActionModal: React.FC<{
                         <span className="text-green-400">إلغاء حظر المستخدم</span>
                     </button>
                 )}
+                 {canTakeAdminAction && (
+                    <>
+                        <div className="border-t border-sky-600/50 my-2"></div>
+                        <h4 className="text-center text-sky-400 text-sm">إجراءات المشرف</h4>
+                        <button onClick={onToggleAdmin} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                            <ShieldExclamationIcon className="w-6 h-6 text-yellow-300"/>
+                            <span>{userProfile.isAdmin ? 'تخفيض من الإشراف' : 'ترقية لمشرف'}</span>
+                        </button>
+                        <button onClick={onToggleMute} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                           {userProfile.isMuted ? <UserPlusIcon className="w-6 h-6 text-green-400"/> : <SpeakerXMarkIcon className="w-6 h-6 text-orange-400"/> }
+                           <span>{userProfile.isMuted ? 'إلغاء الكتم' : 'كتم المستخدم'}</span>
+                        </button>
+                        <button onClick={onToggleBan} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
+                            {isBanned ? <UserPlusIcon className="w-6 h-6 text-green-400"/> : <UserMinusIcon className="w-6 h-6 text-red-400"/> }
+                            <span className={isBanned ? 'text-green-400' : 'text-red-400'}>{isBanned ? 'إعادة المستخدم' : 'طرد المستخدم'}</span>
+                        </button>
+                    </>
+                 )}
             </div>
         </div>
     </div>
-);
+)};
 
 const DeleteMessageConfirmationModal: React.FC<{ onConfirm: () => void; onClose: () => void; }> = ({ onConfirm, onClose }) => (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
         <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
             <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حذف الرسالة</h3>
             <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في حذف هذه الرسالة بشكل دائم؟</p>
@@ -1702,7 +1781,7 @@ const DeleteMessageConfirmationModal: React.FC<{ onConfirm: () => void; onClose:
 );
 
 const BlockUserConfirmationModal: React.FC<{ userName: string; onConfirm: () => void; onClose: () => void; }> = ({ userName, onConfirm, onClose }) => (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
         <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
             <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حظر المستخدم</h3>
             <p className="text-sky-200 text-center">
@@ -1810,22 +1889,29 @@ const PrivateConversationsList: React.FC<{
     );
 };
 
-const EMOJI_REACTIONS = ['❤', '👍', '😪', '😞', '😧', '💯'];
+const EMOJI_REACTIONS = ['❤️', '👍', '😪', '😞', '😧', '💯'];
 
 const ChatModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     user: firebase.User;
+    currentUserProfile: UserProfile | null;
     blockedUsers: string[];
     onStartPrivateChat: (user: UserProfile) => void;
     onBlockUser: (user: UserProfile) => void;
     onUnblockUser: (uid: string) => void;
     hasUnreadPrivateMessages: boolean;
-}> = ({ isOpen, onClose, user, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages }) => {
+    handleToggleAdminRole: (user: UserProfile) => void;
+    handleToggleMute: (user: UserProfile) => void;
+    handleToggleBan: (uid: string) => void;
+    handlePinMessage: (message: Message) => void;
+    handleDeleteMessage: (id: string) => void;
+}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
 
     const [editingMessage, setEditingMessage] = useState<Message | null>(null);
     const [editText, setEditText] = useState('');
@@ -1838,9 +1924,15 @@ const ChatModal: React.FC<{
     const [userForAction, setUserForAction] = useState<UserProfile | null>(null);
     const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
 
+    const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
+    const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
+    const [bannedUids, setBannedUids] = useState<string[]>([]);
+
+    const isCurrentUserAdmin = currentUserProfile?.isAdmin || DEVELOPER_UIDS.includes(user.uid);
+
     useEffect(() => {
         if (!isOpen) {
-            setActiveTab('public'); // Reset to public tab when closed
+            setActiveTab('public');
             return;
         }
 
@@ -1851,33 +1943,76 @@ const ChatModal: React.FC<{
                     ...doc.data()
                 } as Message));
                 setMessages(fetchedMessages);
-            }, err => {
-                console.error("Error fetching messages: ", err);
-            });
+            }, err => console.error("Error fetching messages: ", err));
             
+        const unsubscribeMeta = db.collection('app_config').doc('public_chat_meta')
+            .onSnapshot(doc => {
+                setPinnedMessage(doc.data()?.pinnedMessage || null);
+                setBannedUids(doc.data()?.bannedUids || []);
+            }, err => console.error("Error fetching chat meta:", err));
+
         const handleClickOutside = (event: MouseEvent) => {
             if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
                 setReactingToMessageId(null);
             }
         };
-
         document.addEventListener('mousedown', handleClickOutside);
 
         return () => {
              unsubscribeMessages();
+             unsubscribeMeta();
              document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen, user.uid]);
+    }, [isOpen]);
+    
+    useEffect(() => {
+        const uidsInMessages = [...new Set(messages.map(m => m.uid))];
+        const uidsToFetch = uidsInMessages.filter(uid => !userProfiles[uid]);
+        if (uidsToFetch.length > 0) {
+            // Firestore 'in' query is limited to 30 items
+            const fetchChunks = [];
+            for (let i = 0; i < uidsToFetch.length; i += 30) {
+                fetchChunks.push(uidsToFetch.slice(i, i + 30));
+            }
+
+            Promise.all(fetchChunks.map(chunk => 
+                db.collection('users').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get()
+            )).then(snapshots => {
+                const profiles: Record<string, UserProfile> = {};
+                snapshots.forEach(snapshot => {
+                    snapshot.forEach(doc => {
+                        profiles[doc.id] = { uid: doc.id, ...doc.data() } as UserProfile;
+                    });
+                });
+                setUserProfiles(prev => ({ ...prev, ...profiles }));
+            }).catch(err => console.error("Error fetching user profiles:", err));
+        }
+    }, [messages]);
 
     useEffect(() => {
-        if (!editingMessage) {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (editingMessage) return; // Don't scroll when editing
+        const container = messagesContainerRef.current;
+        if (container) {
+            const isNearBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 200;
+            if (isNearBottom) {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }
         }
     }, [messages, editingMessage]);
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMessage.trim()) return;
+
+        if (currentUserProfile?.isMuted) {
+            alert('أنت مكتوم ولا يمكنك إرسال رسائل.');
+            return;
+        }
+
+        if (bannedUids.includes(user.uid)) {
+            alert('أنت مطرود ولا يمكنك إرسال رسائل.');
+            return;
+        }
 
         const { uid, displayName, photoURL } = user;
         setLoading(true);
@@ -1901,38 +2036,31 @@ const ChatModal: React.FC<{
     const handleReaction = async (messageId: string, emoji: string) => {
         const messageRef = db.collection('messages').doc(messageId);
         const currentUserUid = user.uid;
+        const message = messages.find(m => m.id === messageId);
+        if (!message) return;
+
+        const uidsForEmoji = message.reactions?.[emoji] || [];
+        const hasReacted = uidsForEmoji.includes(currentUserUid);
 
         try {
-            await db.runTransaction(async (transaction) => {
-                const messageDoc = await transaction.get(messageRef);
-                if (!messageDoc.exists) return;
-
-                const data = messageDoc.data() as Message;
-                const reactions = data.reactions ? { ...data.reactions } : {};
-                const uidsForEmoji = reactions[emoji] ? [...reactions[emoji]] : [];
-                const userIndex = uidsForEmoji.indexOf(currentUserUid);
-
-                if (userIndex > -1) {
-                    uidsForEmoji.splice(userIndex, 1);
+            if (hasReacted) {
+                if (uidsForEmoji.length === 1) {
+                    await messageRef.update({ [`reactions.${emoji}`]: firebase.firestore.FieldValue.delete() });
                 } else {
-                    uidsForEmoji.push(currentUserUid);
+                    await messageRef.update({ [`reactions.${emoji}`]: firebase.firestore.FieldValue.arrayRemove(currentUserUid) });
                 }
-
-                if (uidsForEmoji.length > 0) {
-                    reactions[emoji] = uidsForEmoji;
-                } else {
-                    delete reactions[emoji];
-                }
-                
-                transaction.update(messageRef, { reactions });
-            });
+            } else {
+                await messageRef.update({ [`reactions.${emoji}`]: firebase.firestore.FieldValue.arrayUnion(currentUserUid) });
+            }
         } catch (error) {
-            console.error("Reaction transaction failed: ", error);
+            console.error("Reaction update failed: ", error);
+        } finally {
+            setReactingToMessageId(null);
         }
-        setReactingToMessageId(null);
     };
 
     const handleEdit = (msg: Message) => {
+        setMessageForAction(null);
         setEditingMessage(msg);
         setEditText(msg.text);
     };
@@ -1944,11 +2072,8 @@ const ChatModal: React.FC<{
             await db.collection('messages').doc(editingMessage.id).update({ text: editText });
             setEditingMessage(null);
             setEditText('');
-        } catch(e) {
-            console.error("Error saving edit:", e);
-        } finally {
-            setLoading(false);
-        }
+        } catch(e) { console.error("Error saving edit:", e); } 
+        finally { setLoading(false); }
     };
 
     const handleCancelEdit = () => {
@@ -1958,13 +2083,70 @@ const ChatModal: React.FC<{
 
     const confirmDelete = async () => {
         if (!messageToDelete) return;
+        handleDeleteMessage(messageToDelete.id);
+        setMessageToDelete(null);
+    };
+    
+    const handleCopy = (text: string) => {
+        navigator.clipboard.writeText(text);
+        setMessageForAction(null);
+    };
+    
+    const handlePin = (message: Message) => {
+        handlePinMessage(message);
+        setMessageForAction(null);
+    };
+
+    // --- FIX START: Wrapper functions for admin actions to ensure real-time UI updates ---
+    const wrappedOnToggleAdmin = async () => {
+        if (!userForAction) return;
+        const targetUser = { ...userForAction };
+        setUserForAction(null); // Close modal for better UX
         try {
-            await db.collection('messages').doc(messageToDelete.id).delete();
-            setMessageToDelete(null);
-        } catch(e) {
-            console.error("Error deleting message:", e);
+            await handleToggleAdminRole(targetUser); // Call original function
+            
+            // Refetch and update local state to ensure UI is up-to-date for the next interaction
+            const userDoc = await db.collection('users').doc(targetUser.uid).get();
+            if (userDoc.exists) {
+                const updatedProfile = { uid: userDoc.id, ...userDoc.data() } as UserProfile;
+                setUserProfiles(prev => ({
+                    ...prev,
+                    [targetUser.uid]: updatedProfile
+                }));
+            }
+        } catch (error) {
+            console.error("Error toggling admin role and refetching profile:", error);
         }
     };
+
+    const wrappedOnToggleMute = async () => {
+        if (!userForAction) return;
+        const targetUser = { ...userForAction };
+        setUserForAction(null); // Close modal
+        try {
+            await handleToggleMute(targetUser); // Call original function
+
+            // Refetch and update state
+            const userDoc = await db.collection('users').doc(targetUser.uid).get();
+            if (userDoc.exists) {
+                const updatedProfile = { uid: userDoc.id, ...userDoc.data() } as UserProfile;
+                setUserProfiles(prev => ({
+                    ...prev,
+                    [targetUser.uid]: updatedProfile
+                }));
+            }
+        } catch (error) {
+            console.error("Error toggling mute status and refetching profile:", error);
+        }
+    };
+
+    // Ban status is already reactive via onSnapshot on 'app_config', so we only need to call the function and close the modal.
+    const wrappedOnToggleBan = () => {
+        if (!userForAction) return;
+        handleToggleBan(userForAction.uid);
+        setUserForAction(null);
+    };
+    // --- FIX END ---
 
     if (!isOpen) return null;
     
@@ -1994,18 +2176,40 @@ const ChatModal: React.FC<{
                         </button>
                     </div>
                 </header>
-                <main className="flex-grow overflow-y-auto">
+                
+                {activeTab === 'public' && pinnedMessage && (
+                    <div 
+                        className="sticky top-0 bg-sky-800/80 backdrop-blur-sm p-2 text-sm text-sky-200 border-b border-sky-400/30 cursor-pointer hover:bg-sky-700/80 transition-colors z-10"
+                        onClick={() => {
+                            document.getElementById(`message-${pinnedMessage.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                    >
+                        <div className="flex items-center gap-2 max-w-full overflow-hidden">
+                            <PinIcon className="w-4 h-4 text-teal-300 flex-shrink-0" />
+                            <p className="truncate">
+                                <span className="font-bold">{pinnedMessage.displayName}:</span> {pinnedMessage.text}
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                <main ref={messagesContainerRef} className="flex-grow overflow-y-auto">
                    {activeTab === 'public' ? (
                      <div className="p-4 space-y-4">
                         {messages.map(msg => {
+                            const profile = userProfiles[msg.uid];
+                            if (bannedUids.includes(msg.uid) && !isCurrentUserAdmin) return null;
+                            if (!profile && !msg.displayName) return null; // Don't render if profile hasn't loaded yet
+
                             const isMyMessage = msg.uid === user.uid;
-                            const isBlocked = blockedUsers.includes(msg.uid);
-                            const targetUser: UserProfile = { uid: msg.uid, displayName: msg.displayName, photoURL: msg.photoURL };
+                            const isBlockedByMe = blockedUsers.includes(msg.uid);
+                            const isSenderAdmin = profile?.isAdmin || DEVELOPER_UIDS.includes(msg.uid);
+                            
                             return (
-                                <div key={msg.id} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''} ${isBlocked ? 'opacity-60' : ''}`}>
+                                <div key={msg.id} id={`message-${msg.id}`} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''} ${isBlockedByMe || bannedUids.includes(msg.uid) ? 'opacity-50' : ''}`}>
                                      <div className="relative">
                                         <button
-                                            onClick={() => !isMyMessage && setUserForAction(targetUser)}
+                                            onClick={() => !isMyMessage && setUserForAction(profile)}
                                             disabled={isMyMessage}
                                             className={!isMyMessage ? 'cursor-pointer' : 'cursor-default'}
                                          >
@@ -2034,49 +2238,47 @@ const ChatModal: React.FC<{
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className={`relative p-3 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}>
-                                                <div className={`absolute -top-3 flex items-center gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
-                                                    <button onClick={() => setReactingToMessageId(reactingToMessageId === msg.id ? null : msg.id)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
-                                                        <FaceSmileIcon className="w-4 h-4" />
+                                            <div
+                                                onContextMenu={(e) => { e.preventDefault(); setReactingToMessageId(msg.id); }}
+                                                className={`relative p-3 pb-5 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}
+                                            >
+                                                <div className={`absolute -top-3 ${isMyMessage ? 'left-0' : 'right-0'}`}>
+                                                    <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
+                                                        <DotsVerticalIcon className="w-4 h-4" />
                                                     </button>
-                                                    {isMyMessage && (
-                                                        <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
-                                                            <DotsVerticalIcon className="w-4 h-4" />
-                                                        </button>
-                                                    )}
                                                 </div>
                                                 
                                                 {reactingToMessageId === msg.id && (
                                                     <div ref={reactionMenuRef} className={`absolute top-[-40px] bg-slate-800 border border-slate-600 rounded-full shadow-lg z-10 p-1 flex gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
                                                         {EMOJI_REACTIONS.map(emoji => (
-                                                            <button key={emoji} onClick={() => handleReaction(msg.id, emoji)} className="p-1 rounded-full hover:bg-slate-700 transition-colors text-xl">
+                                                            <button key={emoji} onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji); }} className="p-1 rounded-full hover:bg-slate-700 transition-colors text-xl">
                                                                 {emoji}
                                                             </button>
                                                         ))}
                                                     </div>
                                                 )}
 
-                                                <p className="text-sm font-bold text-sky-200 mb-1">{msg.displayName}</p>
+                                                <p className="text-sm font-bold text-sky-200 mb-1">{isSenderAdmin && '⭐ '}{msg.displayName}</p>
                                                 <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
-                                            </div>
-                                        )}
-                                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                            <div className={`flex flex-wrap gap-1 mt-1 px-1 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                                {/* FIX: Add Array.isArray check to ensure 'uids' is an array before accessing its properties, resolving type errors on properties like 'length' and 'includes'. */}
-                                                {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
-                                                    <button 
-                                                        key={emoji}
-                                                        onClick={() => handleReaction(msg.id, emoji)}
-                                                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors ${
-                                                            uids.includes(user.uid) 
-                                                            ? 'bg-sky-500 border border-sky-300 text-white' 
-                                                            : 'bg-slate-600/50 border border-transparent hover:bg-slate-600 text-sky-200'
-                                                        }`}
-                                                    >
-                                                        <span>{emoji}</span>
-                                                        <span className="font-semibold">{uids.length}</span>
-                                                    </button>
-                                                ))}
+                                                
+                                                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                                    <div className={`absolute bottom-0 flex flex-wrap gap-1 px-1 z-10 ${isMyMessage ? 'left-1' : 'right-1'}`}>
+                                                        {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
+                                                            <button 
+                                                                key={emoji}
+                                                                onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji); }}
+                                                                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors shadow-md ${
+                                                                    uids.includes(user.uid) 
+                                                                    ? 'bg-sky-500 border border-sky-300 text-white' 
+                                                                    : 'bg-slate-800 border border-slate-600 hover:bg-slate-700 text-sky-200'
+                                                                }`}
+                                                            >
+                                                                <span>{emoji}</span>
+                                                                <span className="font-semibold">{uids.length}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                         <p className="text-xs text-sky-500 mt-1 px-1">
@@ -2114,14 +2316,17 @@ const ChatModal: React.FC<{
              {messageForAction && (
                 <MessageActionModal
                     onClose={() => setMessageForAction(null)}
-                    onEdit={() => {
-                        handleEdit(messageForAction);
-                        setMessageForAction(null);
-                    }}
+                    onCopy={() => handleCopy(messageForAction.text)}
+                    canEdit={messageForAction.uid === user.uid}
+                    onEdit={() => handleEdit(messageForAction)}
+                    canDelete={messageForAction.uid === user.uid || isCurrentUserAdmin}
                     onDelete={() => {
                         setMessageToDelete(messageForAction);
                         setMessageForAction(null);
                     }}
+                    canPin={isCurrentUserAdmin}
+                    isPinned={pinnedMessage?.id === messageForAction.id}
+                    onPin={() => handlePin(messageForAction)}
                 />
             )}
             {userForAction && (
@@ -2141,6 +2346,12 @@ const ChatModal: React.FC<{
                         onUnblockUser(userForAction.uid);
                         setUserForAction(null);
                     }}
+                    isCurrentUserAdmin={isCurrentUserAdmin}
+                    currentUserUid={user.uid}
+                    onToggleAdmin={wrappedOnToggleAdmin}
+                    onToggleMute={wrappedOnToggleMute}
+                    onToggleBan={wrappedOnToggleBan}
+                    isBanned={bannedUids.includes(userForAction.uid)}
                 />
             )}
         </div>
@@ -2161,6 +2372,7 @@ const PrivateChatModal: React.FC<{
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
     const chatId = [user.uid, otherUser.uid].sort().join('_');
     const messagesCollection = db.collection('private_chats').doc(chatId).collection('messages');
     const [amIBlocked, setAmIBlocked] = useState(false);
@@ -2183,11 +2395,8 @@ const PrivateChatModal: React.FC<{
                     ...doc.data()
                 } as Message));
                 setMessages(fetchedMessages);
-            }, err => {
-                console.error("Error fetching private messages: ", err);
-            });
+            }, err => console.error("Error fetching private messages: ", err));
             
-        // Listener to check if I am blocked by the other user
         const otherUserRef = db.collection('users').doc(otherUser.uid);
         const unsubscribeAmIBlocked = otherUserRef.onSnapshot(doc => {
             const data = doc.data();
@@ -2195,20 +2404,18 @@ const PrivateChatModal: React.FC<{
             setAmIBlocked(theirBlockedList.includes(user.uid));
         }, err => {
             console.error("Error checking if blocked:", err);
-            setAmIBlocked(false); // Default to not blocked on error
+            setAmIBlocked(false);
         });
 
-        // Mark conversation as read on open
         db.collection('users').doc(user.uid).collection('conversations').doc(otherUser.uid)
             .set({ hasUnread: false }, { merge: true })
-            .catch(err => console.log("Failed to mark convo as read (may not exist yet):", err.message));
+            .catch(err => console.log("Failed to mark convo as read:", err.message));
             
         const handleClickOutside = (event: MouseEvent) => {
             if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
                 setReactingToMessageId(null);
             }
         };
-
         document.addEventListener('mousedown', handleClickOutside);
 
         return () => {
@@ -2219,8 +2426,13 @@ const PrivateChatModal: React.FC<{
     }, [isOpen, chatId, user.uid, otherUser.uid]);
 
     useEffect(() => {
-        if (!editingMessage) {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (editingMessage) return;
+        const container = messagesContainerRef.current;
+        if (container) {
+            const isNearBottom = container.scrollHeight - container.clientHeight - container.scrollTop < 200;
+            if (isNearBottom) {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }
         }
     }, [messages, editingMessage]);
 
@@ -2232,7 +2444,6 @@ const PrivateChatModal: React.FC<{
         setLoading(true);
 
         try {
-            // 1. Add the message to the collection
             await messagesCollection.add({
                 text: newMessage,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
@@ -2242,7 +2453,6 @@ const PrivateChatModal: React.FC<{
             });
              setNewMessage('');
 
-            // 2. Update conversation metadata for both users
             const timestamp = firebase.firestore.FieldValue.serverTimestamp();
             
             const myProfileForOther = {
@@ -2265,48 +2475,35 @@ const PrivateChatModal: React.FC<{
             await userConversationsRef.set(otherProfileForMe, { merge: true });
             await otherUserConversationsRef.set({ ...myProfileForOther, hasUnread: true }, { merge: true });
 
-        } catch (error) {
-            console.error("Error sending private message:", error);
-        } finally {
-            setLoading(false);
-        }
+        } catch (error) { console.error("Error sending private message:", error); } 
+        finally { setLoading(false); }
     };
     
     const handleReaction = async (messageId: string, emoji: string) => {
         const messageRef = messagesCollection.doc(messageId);
         const currentUserUid = user.uid;
+        const message = messages.find(m => m.id === messageId);
+        if (!message) return;
+
+        const uidsForEmoji = message.reactions?.[emoji] || [];
+        const hasReacted = uidsForEmoji.includes(currentUserUid);
 
         try {
-            await db.runTransaction(async (transaction) => {
-                const messageDoc = await transaction.get(messageRef);
-                if (!messageDoc.exists) return;
-
-                const data = messageDoc.data() as Message;
-                const reactions = data.reactions ? { ...data.reactions } : {};
-                const uidsForEmoji = reactions[emoji] ? [...reactions[emoji]] : [];
-                const userIndex = uidsForEmoji.indexOf(currentUserUid);
-
-                if (userIndex > -1) {
-                    uidsForEmoji.splice(userIndex, 1);
+            if (hasReacted) {
+                if (uidsForEmoji.length === 1) {
+                    await messageRef.update({ [`reactions.${emoji}`]: firebase.firestore.FieldValue.delete() });
                 } else {
-                    uidsForEmoji.push(currentUserUid);
+                    await messageRef.update({ [`reactions.${emoji}`]: firebase.firestore.FieldValue.arrayRemove(currentUserUid) });
                 }
-
-                if (uidsForEmoji.length > 0) {
-                    reactions[emoji] = uidsForEmoji;
-                } else {
-                    delete reactions[emoji];
-                }
-                
-                transaction.update(messageRef, { reactions });
-            });
-        } catch (error) {
-            console.error("Reaction transaction failed: ", error);
-        }
-        setReactingToMessageId(null);
+            } else {
+                await messageRef.update({ [`reactions.${emoji}`]: firebase.firestore.FieldValue.arrayUnion(currentUserUid) });
+            }
+        } catch (error) { console.error("Reaction update failed: ", error); } 
+        finally { setReactingToMessageId(null); }
     };
 
     const handleEdit = (msg: Message) => {
+        setMessageForAction(null);
         setEditingMessage(msg);
         setEditText(msg.text);
     };
@@ -2318,11 +2515,8 @@ const PrivateChatModal: React.FC<{
             await messagesCollection.doc(editingMessage.id).update({ text: editText });
             setEditingMessage(null);
             setEditText('');
-        } catch(e) {
-            console.error("Error saving edit:", e);
-        } finally {
-            setLoading(false);
-        }
+        } catch(e) { console.error("Error saving edit:", e); } 
+        finally { setLoading(false); }
     };
 
     const handleCancelEdit = () => {
@@ -2335,9 +2529,12 @@ const PrivateChatModal: React.FC<{
         try {
             await messagesCollection.doc(messageToDelete.id).delete();
             setMessageToDelete(null);
-        } catch(e) {
-            console.error("Error deleting message:", e);
-        }
+        } catch(e) { console.error("Error deleting message:", e); }
+    };
+    
+    const handleCopy = (text: string) => {
+        navigator.clipboard.writeText(text);
+        setMessageForAction(null);
     };
 
     if (!isOpen) return null;
@@ -2371,7 +2568,7 @@ const PrivateChatModal: React.FC<{
                         </button>
                     </div>
                 </header>
-                <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                <main ref={messagesContainerRef} className="flex-grow overflow-y-auto p-4 space-y-4">
                     {messages.map(msg => {
                         const isMyMessage = msg.uid === user.uid;
                         return (
@@ -2399,46 +2596,45 @@ const PrivateChatModal: React.FC<{
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className={`relative p-3 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}>
-                                            <div className={`absolute -top-3 flex items-center gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
-                                                <button onClick={() => setReactingToMessageId(reactingToMessageId === msg.id ? null : msg.id)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
-                                                    <FaceSmileIcon className="w-4 h-4" />
+                                        <div
+                                            onContextMenu={(e) => { e.preventDefault(); setReactingToMessageId(msg.id); }}
+                                            className={`relative p-3 pb-5 rounded-2xl max-w-xs md:max-w-md ${isMyMessage ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}
+                                        >
+                                            <div className={`absolute -top-3 ${isMyMessage ? 'left-0' : 'right-0'}`}>
+                                                <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
+                                                    <DotsVerticalIcon className="w-4 h-4" />
                                                 </button>
-                                                {isMyMessage && (
-                                                    <button onClick={() => setMessageForAction(msg)} className="p-1 rounded-full text-sky-200 opacity-0 group-hover:opacity-100 focus:opacity-100 bg-black/20 hover:bg-black/40 transition-opacity">
-                                                        <DotsVerticalIcon className="w-4 h-4" />
-                                                    </button>
-                                                )}
                                             </div>
                                             
                                             {reactingToMessageId === msg.id && (
                                                 <div ref={reactionMenuRef} className={`absolute top-[-40px] bg-slate-800 border border-slate-600 rounded-full shadow-lg z-10 p-1 flex gap-1 ${isMyMessage ? 'left-0' : 'right-0'}`}>
                                                     {EMOJI_REACTIONS.map(emoji => (
-                                                        <button key={emoji} onClick={() => handleReaction(msg.id, emoji)} className="p-1 rounded-full hover:bg-slate-700 transition-colors text-xl">
+                                                        <button key={emoji} onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji); }} className="p-1 rounded-full hover:bg-slate-700 transition-colors text-xl">
                                                             {emoji}
                                                         </button>
                                                     ))}
                                                 </div>
                                             )}
                                             <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
-                                        </div>
-                                    )}
-                                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                                        <div className={`flex flex-wrap gap-1 mt-1 px-1 ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
-                                            {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
-                                                <button 
-                                                    key={emoji}
-                                                    onClick={() => handleReaction(msg.id, emoji)}
-                                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors ${
-                                                        Array.isArray(uids) && uids.includes(user.uid) 
-                                                        ? 'bg-sky-500 border border-sky-300 text-white' 
-                                                        : 'bg-slate-600/50 border border-transparent hover:bg-slate-600 text-sky-200'
-                                                    }`}
-                                                >
-                                                    <span>{emoji}</span>
-                                                    <span className="font-semibold">{uids.length}</span>
-                                                </button>
-                                            ))}
+                                            
+                                            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                                <div className={`absolute bottom-0 flex flex-wrap gap-1 px-1 z-10 ${isMyMessage ? 'left-1' : 'right-1'}`}>
+                                                    {Object.entries(msg.reactions).map(([emoji, uids]) => Array.isArray(uids) && uids.length > 0 && (
+                                                        <button 
+                                                            key={emoji}
+                                                            onClick={(e) => { e.stopPropagation(); handleReaction(msg.id, emoji); }}
+                                                            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors shadow-md ${
+                                                                uids.includes(user.uid) 
+                                                                ? 'bg-sky-500 border border-sky-300 text-white' 
+                                                                : 'bg-slate-800 border border-slate-600 hover:bg-slate-700 text-sky-200'
+                                                            }`}
+                                                        >
+                                                            <span>{emoji}</span>
+                                                            <span className="font-semibold">{uids.length}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                     <p className="text-xs text-sky-500 mt-1 px-1">
@@ -2481,14 +2677,16 @@ const PrivateChatModal: React.FC<{
              {messageForAction && (
                 <MessageActionModal
                     onClose={() => setMessageForAction(null)}
-                    onEdit={() => {
-                        handleEdit(messageForAction);
-                        setMessageForAction(null);
-                    }}
+                    onCopy={() => handleCopy(messageForAction.text)}
+                    canEdit={messageForAction.uid === user.uid}
+                    onEdit={() => handleEdit(messageForAction)}
+                    canDelete={messageForAction.uid === user.uid}
                     onDelete={() => {
                         setMessageToDelete(messageForAction);
                         setMessageForAction(null);
                     }}
+                    canPin={false}
+                    isPinned={false}
                 />
             )}
         </div>
@@ -2510,6 +2708,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [privateChatTargetUser, setPrivateChatTargetUser] = useState<UserProfile | null>(null);
     const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
     const [userToBlock, setUserToBlock] = useState<UserProfile | null>(null);
+    const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
     const [hasUnreadPrivateMessages, setHasUnreadPrivateMessages] = useState(false);
 
     const isDeveloper = DEVELOPER_UIDS.includes(user.uid);
@@ -2519,11 +2718,11 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
         let unsubscribeStartDate: () => void;
         let unsubscribeUser: () => void;
         let unsubscribeConvos: () => void;
-    
+        let unsubscribeNotifications: () => void;
+
         unsubscribeCounterImage = db.collection('app_config').doc('main')
             .onSnapshot(doc => {
-                const data = doc.data();
-                setCounterImage(data?.imageUrl || null);
+                setCounterImage(doc.data()?.imageUrl || null);
             }, err => console.error("Error fetching counter image: ", err));
     
         if (user.isAnonymous) {
@@ -2531,17 +2730,15 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             if (storedDate) setStartDate(new Date(storedDate));
         } else {
             const userRef = db.collection('users').doc(user.uid);
-            unsubscribeStartDate = userRef.onSnapshot(doc => {
+            unsubscribeUser = userRef.onSnapshot(doc => {
                 const data = doc.data();
                 if (data?.counterStartDate) {
                     setStartDate(new Date(data.counterStartDate));
                 } else {
                     setStartDate(null);
                 }
-            }, err => console.error("Error fetching start date: ", err));
-            
-            unsubscribeUser = userRef.onSnapshot(doc => {
-                setBlockedUsers(doc.data()?.blockedUsers || []);
+                setBlockedUsers(data?.blockedUsers || []);
+                setCurrentUserProfile({ uid: doc.id, ...data } as UserProfile);
             }, err => console.error("Error fetching user data: ", err));
 
             unsubscribeConvos = db.collection('users').doc(user.uid).collection('conversations')
@@ -2551,7 +2748,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
                 }, err => console.error("Error fetching unread status:", err));
         }
         
-        const unsubscribeNotifications = db.collection('notifications').orderBy('timestamp', 'desc')
+        unsubscribeNotifications = db.collection('notifications').orderBy('timestamp', 'desc')
             .onSnapshot(snapshot => {
                 const fetchedNotifications = snapshot.docs.map(doc => ({
                     id: doc.id,
@@ -2565,7 +2762,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             if (unsubscribeStartDate) unsubscribeStartDate();
             if (unsubscribeUser) unsubscribeUser();
             if (unsubscribeConvos) unsubscribeConvos();
-            unsubscribeNotifications();
+            if (unsubscribeNotifications) unsubscribeNotifications();
         };
     }, [user]);
 
@@ -2580,53 +2777,68 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const handleBlockUser = async () => {
         if (!userToBlock) return;
         const targetUid = userToBlock.uid;
-    
-        // Optimistically update the local state to make the UI feel instant
-        setBlockedUsers(prev => {
-            if (prev.includes(targetUid)) return prev;
-            return [...prev, targetUid];
-        });
-    
-        setUserToBlock(null); // Close the confirmation modal
-    
-        // Asynchronously update Firestore. The listener will eventually reconcile the state.
+        setBlockedUsers(prev => [...prev, targetUid]);
+        setUserToBlock(null);
         try {
             await db.collection('users').doc(user.uid).update({
                 blockedUsers: firebase.firestore.FieldValue.arrayUnion(targetUid)
             });
-        } catch (error) {
-            console.error("Firestore update failed for block. UI will be corrected by listener.", error);
-        }
+        } catch (error) { console.error("Firestore update failed for block.", error); }
     };
     
     const handleUnblockUser = async (targetUid: string) => {
-        // Optimistically update the local state to make the UI feel instant
         setBlockedUsers(prev => prev.filter(uid => uid !== targetUid));
-    
-        // Asynchronously update Firestore. The listener will eventually reconcile the state.
         try {
             await db.collection('users').doc(user.uid).update({
                 blockedUsers: firebase.firestore.FieldValue.arrayRemove(targetUid)
             });
-        } catch (error) {
-            console.error("Firestore update failed for unblock. UI will be corrected by listener.", error);
+        } catch (error) { console.error("Firestore update failed for unblock.", error); }
+    };
+
+    const handleToggleAdminRole = async (targetUser: UserProfile) => {
+        await db.collection('users').doc(targetUser.uid).update({ isAdmin: !targetUser.isAdmin });
+    };
+
+    const handleToggleMute = async (targetUser: UserProfile) => {
+        await db.collection('users').doc(targetUser.uid).update({ isMuted: !targetUser.isMuted });
+    };
+
+    const handleToggleBan = async (uid: string) => {
+        const metaRef = db.collection('app_config').doc('public_chat_meta');
+        const doc = await metaRef.get();
+        const bannedUids = doc.data()?.bannedUids || [];
+        if (bannedUids.includes(uid)) {
+            await metaRef.update({ bannedUids: firebase.firestore.FieldValue.arrayRemove(uid) });
+        } else {
+            await metaRef.update({ bannedUids: firebase.firestore.FieldValue.arrayUnion(uid) });
         }
+    };
+    
+    const handlePinMessage = async (message: Message) => {
+        const metaRef = db.collection('app_config').doc('public_chat_meta');
+        const doc = await metaRef.get();
+        const currentPinnedId = doc.data()?.pinnedMessage?.id;
+        
+        if (currentPinnedId === message.id) { // Unpin if it's the same message
+            await metaRef.set({ pinnedMessage: null }, { merge: true });
+        } else {
+            const pin: PinnedMessage = { id: message.id, text: message.text, uid: message.uid, displayName: message.displayName };
+            await metaRef.set({ pinnedMessage: pin }, { merge: true });
+        }
+    };
+    
+    const handleDeleteMessage = async (messageId: string) => {
+        await db.collection('messages').doc(messageId).delete();
     };
 
     const updateStartDate = async (newDate: Date) => {
         setStartDate(newDate);
-
         if (user.isAnonymous) {
             localStorage.setItem('counterStartDate', newDate.toISOString());
         } else {
             try {
-                await db.collection('users').doc(user.uid).set(
-                    { counterStartDate: newDate.toISOString() },
-                    { merge: true }
-                );
-            } catch (error) {
-                console.error("Error updating start date in Firestore: ", error);
-            }
+                await db.collection('users').doc(user.uid).set({ counterStartDate: newDate.toISOString() }, { merge: true });
+            } catch (error) { console.error("Error updating start date in Firestore: ", error); }
         }
     };
 
@@ -2644,7 +2856,6 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
         const [year, month, day] = dateString.split('-').map(Number);
         const now = new Date();
         const localDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds());
-        
         updateStartDate(localDate);
         setShowSetDateModal(false);
         setActiveTab('home');
@@ -2653,9 +2864,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const handleSetCounterImage = async (url: string) => {
         try {
             await db.collection('app_config').doc('main').set({ imageUrl: url }, { merge: true });
-        } catch (error) {
-            console.error("Error setting counter image in Firestore: ", error);
-        }
+        } catch (error) { console.error("Error setting counter image in Firestore: ", error); }
     };
 
     const confirmDeleteCounterImage = async () => {
@@ -2664,9 +2873,7 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             await db.collection('app_config').doc('main').update({
                 imageUrl: firebase.firestore.FieldValue.delete()
             });
-        } catch (error) {
-            console.error("Error deleting counter image from Firestore: ", error);
-        }
+        } catch (error) { console.error("Error deleting counter image from Firestore: ", error); }
     };
 
     const renderActiveView = () => {
@@ -2702,12 +2909,18 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
             <ChatModal 
                 isOpen={showChat} 
                 onClose={() => setShowChat(false)} 
-                user={user} 
+                user={user}
+                currentUserProfile={currentUserProfile}
                 blockedUsers={blockedUsers}
                 onStartPrivateChat={(targetUser) => { setPrivateChatTargetUser(targetUser); setShowChat(false); }}
                 onBlockUser={(targetUser) => setUserToBlock(targetUser)}
                 onUnblockUser={handleUnblockUser}
                 hasUnreadPrivateMessages={hasUnreadPrivateMessages}
+                handleToggleAdminRole={handleToggleAdminRole}
+                handleToggleMute={handleToggleMute}
+                handleToggleBan={handleToggleBan}
+                handlePinMessage={handlePinMessage}
+                handleDeleteMessage={handleDeleteMessage}
             />
             {privateChatTargetUser && (
                 <PrivateChatModal
@@ -2806,6 +3019,8 @@ const App: React.FC = () => {
                                 displayName: newGuestName,
                                 photoURL: null,
                                 isAnonymous: true,
+                                isAdmin: false,
+                                isMuted: false,
                                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                             });
                             // Save the new profile to localStorage for persistence
