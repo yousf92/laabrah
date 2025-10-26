@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
@@ -1713,12 +1712,13 @@ const UserActionModal: React.FC<{
     onUnblockUser: () => void;
     isBlocked: boolean;
     isCurrentUserAdmin: boolean;
+    isCurrentUserDeveloper: boolean;
     currentUserUid: string;
     onToggleAdmin: () => void;
     onToggleMute: () => void;
     onToggleBan: () => void;
     isBanned: boolean;
-}> = ({ userProfile, onClose, onStartPrivateChat, onBlockUser, onUnblockUser, isBlocked, isCurrentUserAdmin, currentUserUid, onToggleAdmin, onToggleMute, onToggleBan, isBanned }) => {
+}> = ({ userProfile, onClose, onStartPrivateChat, onBlockUser, onUnblockUser, isBlocked, isCurrentUserAdmin, isCurrentUserDeveloper, currentUserUid, onToggleAdmin, onToggleMute, onToggleBan, isBanned }) => {
     const canTakeAdminAction = isCurrentUserAdmin && userProfile.uid !== currentUserUid && !DEVELOPER_UIDS.includes(userProfile.uid);
     return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onClose}>
@@ -1744,10 +1744,12 @@ const UserActionModal: React.FC<{
                     <>
                         <div className="border-t border-sky-600/50 my-2"></div>
                         <h4 className="text-center text-sky-400 text-sm">إجراءات المشرف</h4>
-                        <button onClick={onToggleAdmin} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
-                            <ShieldExclamationIcon className="w-6 h-6 text-yellow-300"/>
-                            <span>{userProfile.isAdmin ? 'تخفيض من الإشراف' : 'ترقية لمشرف'}</span>
-                        </button>
+                        {isCurrentUserDeveloper && (
+                            <button onClick={onToggleAdmin} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                                <ShieldExclamationIcon className="w-6 h-6 text-yellow-300"/>
+                                <span>{userProfile.isAdmin ? 'تخفيض من الإشراف' : 'ترقية لمشرف'}</span>
+                            </button>
+                        )}
                         <button onClick={onToggleMute} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
                            {userProfile.isMuted ? <UserPlusIcon className="w-6 h-6 text-green-400"/> : <SpeakerXMarkIcon className="w-6 h-6 text-orange-400"/> }
                            <span>{userProfile.isMuted ? 'إلغاء الكتم' : 'كتم المستخدم'}</span>
@@ -1906,7 +1908,9 @@ const ChatModal: React.FC<{
     handleToggleBan: (uid: string) => void;
     handlePinMessage: (message: Message) => void;
     handleDeleteMessage: (id: string) => void;
-}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage }) => {
+    showAlert: (message: string, type?: 'error' | 'success') => void;
+    isDeveloper: boolean;
+}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage, showAlert, isDeveloper }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
@@ -2005,12 +2009,12 @@ const ChatModal: React.FC<{
         if (!newMessage.trim()) return;
 
         if (currentUserProfile?.isMuted) {
-            alert('أنت مكتوم حاليًا، لا يمكنك إرسال الرسائل.');
+            showAlert('أنت مكتوم حاليًا، لا يمكنك إرسال الرسائل.');
             return;
         }
 
         if (bannedUids.includes(user.uid)) {
-            alert('أنت مطرود ولا يمكنك إرسال رسائل.');
+            showAlert('أنت مطرود ولا يمكنك إرسال رسائل.');
             return;
         }
 
@@ -2349,6 +2353,7 @@ const ChatModal: React.FC<{
                         setUserForAction(null);
                     }}
                     isCurrentUserAdmin={isCurrentUserAdmin}
+                    isCurrentUserDeveloper={isDeveloper}
                     currentUserUid={user.uid}
                     onToggleAdmin={wrappedOnToggleAdmin}
                     onToggleMute={wrappedOnToggleMute}
@@ -2698,7 +2703,10 @@ const PrivateChatModal: React.FC<{
 };
 
 // --- Logged In Layout ---
-const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
+const LoggedInLayout: React.FC<{ 
+    user: firebase.User;
+    showAlert: (message: string, type?: 'error' | 'success') => void;
+}> = ({ user, showAlert }) => {
     const [activeTab, setActiveTab] = useState<LoggedInView>('home');
     const [startDate, setStartDate] = useState<Date | null>(null);
     const [counterImage, setCounterImage] = useState<string | null>(null);
@@ -2930,6 +2938,8 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
                 handleToggleBan={handleToggleBan}
                 handlePinMessage={handlePinMessage}
                 handleDeleteMessage={handleDeleteMessage}
+                showAlert={showAlert}
+                isDeveloper={isDeveloper}
             />
             {privateChatTargetUser && (
                 <PrivateChatModal
@@ -2954,6 +2964,30 @@ const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     );
 };
 
+// --- Custom Alert Component ---
+const CustomAlert: React.FC<{ message: string; type: 'error' | 'success'; onClose: () => void; }> = ({ message, type, onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+
+    const bgColor = type === 'error' ? 'bg-red-900/80 border-red-500/50' : 'bg-green-900/80 border-green-500/50';
+    const textColor = type === 'error' ? 'text-red-300' : 'text-green-300';
+    const Icon = type === 'error' ? ShieldExclamationIcon : ShieldCheckIcon;
+
+    return (
+        <div className="fixed top-5 right-1/2 translate-x-1/2 z-[100] w-full max-w-sm p-4">
+            <div className={`flex items-center gap-4 p-4 rounded-lg shadow-lg backdrop-blur-md ${bgColor}`}>
+                <Icon className={`w-6 h-6 flex-shrink-0 ${textColor}`} />
+                <p className="text-white">{message}</p>
+                <button onClick={onClose} className="mr-auto p-1 rounded-full hover:bg-white/10">
+                    <XMarkIcon className="w-5 h-5 text-white" />
+                </button>
+            </div>
+        </div>
+    );
+};
+
 
 // --- App Component ---
 const App: React.FC = () => {
@@ -2961,6 +2995,11 @@ const App: React.FC = () => {
     const [user, setUser] = useState<firebase.User | null>(null);
     const [loading, setLoading] = useState(true);
     const [isLocked, setIsLocked] = useState(false);
+    const [alertInfo, setAlertInfo] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
+
+    const showAlert = (message: string, type: 'error' | 'success' = 'error') => {
+        setAlertInfo({ message, type });
+    };
 
     useEffect(() => {
         const checkLockStatus = () => {
@@ -3114,9 +3153,10 @@ const App: React.FC = () => {
                 backgroundColor: '#0c4a6e'
             }}
         >
+             {alertInfo && <CustomAlert message={alertInfo.message} type={alertInfo.type} onClose={() => setAlertInfo(null)} />}
             <div className="min-h-screen bg-sky-900/50">
                 {user ? (
-                    <LoggedInLayout user={user} />
+                    <LoggedInLayout user={user} showAlert={showAlert} />
                 ) : (
                     <div className="flex items-center justify-center min-h-screen p-4">
                         <div className="w-full max-w-md bg-sky-950/80 rounded-2xl shadow-xl p-8 space-y-8 relative backdrop-blur-xl border border-sky-300/30">
