@@ -1,3 +1,6 @@
+
+
+
 import React, { useState, useEffect, useRef } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
@@ -8,7 +11,7 @@ import {
     // createUserWithEmailAndPassword, // v9
     // signInWithEmailAndPassword, // v9
     // sendPasswordResetEmail, // v9
-    // onAuthStateChanged, // v9
+    onAuthStateChanged, // v9
     // signOut, // v9
     // updateProfile, // v9
     // sendEmailVerification, // v9
@@ -74,6 +77,11 @@ interface Message {
     displayName: string;
     photoURL: string | null;
     reactions?: { [emoji: string]: string[] };
+    replyTo?: {
+        id: string;
+        text: string;
+        displayName: string;
+    };
 }
 
 interface PinnedMessage {
@@ -82,6 +90,34 @@ interface PinnedMessage {
     uid: string;
     displayName: string;
 }
+
+interface Group {
+    id: string;
+    name: string;
+    description: string;
+    photoURL: string | null;
+    ownerUid: string;
+    createdAt: firebase.firestore.Timestamp;
+    memberUids: string[]; // For querying
+    pinnedMessage?: PinnedMessage;
+}
+
+type GroupMemberRole = 'owner' | 'admin' | 'member';
+
+interface GroupMember {
+    uid: string;
+    displayName: string;
+    photoURL: string | null;
+    role: GroupMemberRole;
+}
+
+interface JoinRequest {
+    id: string; // Document ID is the user UID
+    displayName: string;
+    photoURL: string | null;
+    timestamp: firebase.firestore.Timestamp;
+}
+
 
 interface ViewProps {
     setView: React.Dispatch<React.SetStateAction<View>>;
@@ -123,8 +159,36 @@ const formatDistanceToNow = (date: Date): string => {
     return `قبل ${years} سنة`;
 };
 
+const getArabicUnitLabel = (count: number, unit: 'month' | 'day' | 'hour' | 'minute' | 'second'): string => {
+    const units = {
+        month: { single: 'شهر', dual: 'شهران', plural: 'أشهر' },
+        day: { single: 'يوم', dual: 'يومان', plural: 'أيام' },
+        hour: { single: 'ساعة', dual: 'ساعتان', plural: 'ساعات' },
+        minute: { single: 'دقيقة', dual: 'دقيقتان', plural: 'دقائق' },
+        second: { single: 'ثانية', dual: 'ثانيتان', plural: 'ثواني' },
+    };
+
+    const u = units[unit];
+
+    if (count === 1) return u.single;
+    if (count === 2) return u.dual;
+    return u.plural;
+};
+
 
 // --- SVG Icons ---
+const EnvelopeIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+    </svg>
+);
+
+const LockClosedIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 00-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+  </svg>
+);
+
 const UserIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -194,7 +258,7 @@ const SettingsIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 const CameraIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2-2H5a2 2 0 01-2-2V9z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
@@ -309,9 +373,40 @@ const SpeakerXMarkIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const ReplyIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+    </svg>
+);
+
+const UsersIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m-7.5-2.952A3 3 0 0010.5 12A3 3 0 008 14.25m8.94-4.286a3 3 0 00-4.286-4.286A3 3 0 0010.5 12a3 3 0 00-2.25 5.25m5-10.5V6a3 3 0 00-3-3H6a3 3 0 00-3 3v12a3 3 0 003 3h5.25" />
+    </svg>
+);
+
+const ArrowUpCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11.25l-3-3m0 0l-3 3m3-3v7.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+const ArrowDownCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75l3 3m0 0l3-3m-3 3v-7.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+const ArrowLeftOnRectangleIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+    </svg>
+);
+
+
 // --- UI Components ---
 const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
-    <p className="text-center text-red-400 bg-red-900/50 p-2 rounded-lg">{message}</p>
+    <p className="text-center text-red-400 bg-red-900/50 p-3 rounded-lg text-sm">{message}</p>
 );
 
 // --- Main View Component ---
@@ -367,68 +462,56 @@ const LoginView: React.FC<ViewProps> = ({ setView }) => {
     };
     
     return (
-        <div>
-            <div className="relative mb-8">
-                <button 
-                    onClick={() => setView('main')} 
-                    className="absolute top-1/2 -translate-y-1/2 left-0 p-2 rounded-full text-sky-200 hover:text-white hover:bg-sky-500/20 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    aria-label="العودة"
-                >
-                    <BackArrowIcon className="w-6 h-6" />
-                </button>
-                <h2 className="text-2xl font-bold text-center text-white text-shadow">تسجيل الدخول</h2>
-            </div>
-            <form className="space-y-8" onSubmit={handleSubmit}>
+        <div className="w-full bg-slate-900/50 backdrop-blur-md border border-slate-700 rounded-2xl p-8 shadow-2xl relative">
+            <button 
+                onClick={() => setView('main')} 
+                className="absolute top-4 left-4 p-2 rounded-full text-slate-300 hover:text-white hover:bg-slate-700/50 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500"
+                aria-label="العودة"
+            >
+                <BackArrowIcon className="w-6 h-6" />
+            </button>
+            <h2 className="text-3xl font-bold text-center text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-400 mb-8">
+                تسجيل الدخول
+            </h2>
+            <form className="space-y-6" onSubmit={handleSubmit}>
                 {error && <ErrorMessage message={error} />}
-                <div className="relative z-0">
+                <div className="relative">
+                    <EnvelopeIcon className="w-5 h-5 text-slate-400 absolute top-1/2 -translate-y-1/2 right-4" />
                     <input
                         type="email"
-                        id="login_email"
-                        className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
-                        placeholder=" "
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg py-3 pr-12 pl-4 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                        placeholder="البريد الإلكتروني"
                         aria-label="البريد الإلكتروني"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
                     />
-                    <label
-                        htmlFor="login_email"
-                        className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-                    >
-                        البريد الإلكتروني
-                    </label>
                 </div>
-                <div className="relative z-0">
+                <div className="relative">
+                     <LockClosedIcon className="w-5 h-5 text-slate-400 absolute top-1/2 -translate-y-1/2 right-4" />
                     <input
                         type={showPassword ? 'text' : 'password'}
-                        id="login_password"
-                        className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
-                        placeholder=" "
+                        className="w-full bg-slate-800/60 border border-slate-700 rounded-lg py-3 pr-12 pl-12 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                        placeholder="كلمة المرور"
                         aria-label="كلمة المرور"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
                     />
-                     <label
-                        htmlFor="login_password"
-                        className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-                    >
-                        كلمة المرور
-                    </label>
                     <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute top-1/2 -translate-y-1/2 left-0 p-2 text-sky-200 hover:text-white transition-colors focus:outline-none"
+                        className="absolute top-1/2 -translate-y-1/2 left-4 p-1 text-slate-400 hover:text-white transition-colors focus:outline-none"
                         aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
                     >
                         {showPassword ? <EyeSlashIcon className="w-6 h-6" /> : <EyeIcon className="w-6 h-6" />}
                     </button>
                 </div>
-                <div className="text-left -mt-4">
+                <div className="text-left">
                      <button
                         type="button"
                         onClick={() => setView('forgot-password')}
-                        className="text-sm text-sky-300 hover:text-sky-100 hover:underline focus:outline-none transition"
+                        className="text-sm font-semibold text-teal-300 hover:text-teal-200 hover:underline focus:outline-none transition"
                     >
                         نسيت كلمة المرور؟
                     </button>
@@ -436,10 +519,16 @@ const LoginView: React.FC<ViewProps> = ({ setView }) => {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-sky-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale disabled:scale-100"
+                    className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none bg-gradient-to-r from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 hover:shadow-teal-500/30 hover:scale-105 active:scale-95 focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-teal-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 disabled:shadow-none"
                 >
                     {loading ? 'جارِ الدخول...' : 'تسجيل الدخول'}
                 </button>
+                 <p className="text-center text-sm text-slate-400 pt-4">
+                    ليس لديك حساب؟{' '}
+                    <button type="button" onClick={() => setView('signup')} className="font-semibold text-teal-300 hover:text-teal-200 hover:underline">
+                        إنشاء حساب
+                    </button>
+                </p>
             </form>
         </div>
     );
@@ -490,114 +579,91 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
     };
 
     return (
-        <div>
-            <div className="relative mb-8">
-                 <button 
-                    onClick={() => setView('main')} 
-                    className="absolute top-1/2 -translate-y-1/2 left-0 p-2 rounded-full text-sky-200 hover:text-white hover:bg-sky-500/20 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    aria-label="العودة"
-                 >
-                    <BackArrowIcon className="w-6 h-6" />
-                </button>
-                <h2 className="text-2xl font-bold text-center text-white text-shadow">إنشاء حساب جديد</h2>
-            </div>
+        <div className="w-full bg-slate-900/50 backdrop-blur-md border border-slate-700 rounded-2xl p-8 shadow-2xl relative">
+             <button 
+                onClick={() => setView('main')} 
+                className="absolute top-4 left-4 p-2 rounded-full text-slate-300 hover:text-white hover:bg-slate-700/50 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500"
+                aria-label="العودة"
+             >
+                <BackArrowIcon className="w-6 h-6" />
+            </button>
+            <h2 className="text-3xl font-bold text-center text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-400 mb-8">إنشاء حساب جديد</h2>
             {submitted ? (
                  <div className="text-center text-white">
-                    <p className="mb-4">تم إنشاء حسابك بنجاح!</p>
-                    <p className="mb-6 text-sky-200">تم إرسال رسالة التحقق إلى بريدك الإلكتروني. يرجى التحقق من صندوق الوارد وخاصة مجلد الرسائل غير المرغوب فيها (السبام).</p>
+                    <ShieldCheckIcon className="w-16 h-16 mx-auto text-teal-400 mb-4" />
+                    <h3 className="text-xl font-bold mb-2">تم إنشاء حسابك بنجاح!</h3>
+                    <p className="mb-6 text-slate-300">
+                        تم إرسال رسالة التحقق إلى بريدك الإلكتروني. يرجى التحقق من صندوق الوارد ومجلد الرسائل غير المرغوب فيها.
+                    </p>
                     <button
                         onClick={() => setView('login')}
-                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-sky-400"
+                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none bg-gradient-to-r from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 hover:shadow-teal-500/30 hover:scale-105 active:scale-95 focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-teal-400"
                     >
                         الذهاب إلى صفحة الدخول
                     </button>
                 </div>
             ) : (
-                <form className="space-y-8" onSubmit={handleSubmit}>
+                <form className="space-y-6" onSubmit={handleSubmit}>
                     {error && <ErrorMessage message={error} />}
-                    <div className="relative z-0">
+                     <div className="relative">
+                        <UserIcon className="w-5 h-5 text-slate-400 absolute top-1/2 -translate-y-1/2 right-4" />
                         <input
                             type="text"
-                            id="signup_name"
-                            className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
-                            placeholder=" "
+                            className="w-full bg-slate-800/60 border border-slate-700 rounded-lg py-3 pr-12 pl-4 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                            placeholder="الاسم الكامل"
                             aria-label="الاسم الكامل"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             required
                         />
-                         <label
-                            htmlFor="signup_name"
-                            className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-                        >
-                            الاسم الكامل
-                        </label>
                     </div>
-                    <div className="relative z-0">
+                    <div className="relative">
+                        <EnvelopeIcon className="w-5 h-5 text-slate-400 absolute top-1/2 -translate-y-1/2 right-4" />
                         <input
                             type="email"
-                            id="signup_email"
-                            className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
-                            placeholder=" "
+                             className="w-full bg-slate-800/60 border border-slate-700 rounded-lg py-3 pr-12 pl-4 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                            placeholder="البريد الإلكتروني"
                             aria-label="البريد الإلكتروني"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
                         />
-                         <label
-                            htmlFor="signup_email"
-                            className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-                        >
-                            البريد الإلكتروني
-                        </label>
                     </div>
-                    <div className="relative z-0">
+                    <div className="relative">
+                        <LockClosedIcon className="w-5 h-5 text-slate-400 absolute top-1/2 -translate-y-1/2 right-4" />
                         <input
                             type={showPassword ? 'text' : 'password'}
-                            id="signup_password"
-                            className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
-                            placeholder=" "
+                            className="w-full bg-slate-800/60 border border-slate-700 rounded-lg py-3 pr-12 pl-12 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                            placeholder="كلمة المرور"
                             aria-label="كلمة المرور"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
                         />
-                        <label
-                            htmlFor="signup_password"
-                            className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-                        >
-                            كلمة المرور
-                        </label>
                         <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute top-1/2 -translate-y-1/2 left-0 p-2 text-sky-200 hover:text-white transition-colors focus:outline-none"
+                            className="absolute top-1/2 -translate-y-1/2 left-4 p-1 text-slate-400 hover:text-white transition-colors focus:outline-none"
                             aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
                         >
                             {showPassword ? <EyeSlashIcon className="w-6 h-6" /> : <EyeIcon className="w-6 h-6" />}
                         </button>
                     </div>
-                     <div className="relative z-0">
+                     <div className="relative">
+                        <LockClosedIcon className="w-5 h-5 text-slate-400 absolute top-1/2 -translate-y-1/2 right-4" />
                         <input
                             type={showConfirmPassword ? 'text' : 'password'}
-                            id="signup_confirm_password"
-                            className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
-                            placeholder=" "
+                            className="w-full bg-slate-800/60 border border-slate-700 rounded-lg py-3 pr-12 pl-12 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                            placeholder="تأكيد كلمة المرور"
                             aria-label="تأكيد كلمة المرور"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             required
                         />
-                         <label
-                            htmlFor="signup_confirm_password"
-                            className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-                        >
-                            تأكيد كلمة المرور
-                        </label>
                          <button
                             type="button"
                             onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                            className="absolute top-1/2 -translate-y-1/2 left-0 p-2 text-sky-200 hover:text-white transition-colors focus:outline-none"
+                             className="absolute top-1/2 -translate-y-1/2 left-4 p-1 text-slate-400 hover:text-white transition-colors focus:outline-none"
                             aria-label={showConfirmPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
                         >
                             {showConfirmPassword ? <EyeSlashIcon className="w-6 h-6" /> : <EyeIcon className="w-6 h-6" />}
@@ -606,10 +672,16 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-teal-500 to-teal-700 hover:from-teal-400 hover:to-teal-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-teal-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale disabled:scale-100"
+                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none bg-gradient-to-r from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 hover:shadow-teal-500/30 hover:scale-105 active:scale-95 focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-teal-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 disabled:shadow-none"
                     >
                         {loading ? 'جارِ إنشاء الحساب...' : 'إنشاء الحساب'}
                     </button>
+                    <p className="text-center text-sm text-slate-400 pt-4">
+                        لديك حساب بالفعل؟{' '}
+                        <button type="button" onClick={() => setView('login')} className="font-semibold text-teal-300 hover:text-teal-200 hover:underline">
+                            تسجيل الدخول
+                        </button>
+                    </p>
                 </form>
             )}
         </div>
@@ -642,55 +714,50 @@ const ForgotPasswordView: React.FC<ViewProps> = ({ setView }) => {
     };
 
     return (
-        <div>
-            <div className="relative mb-8">
-                <button 
-                    onClick={() => setView('login')} 
-                    className="absolute top-1/2 -translate-y-1/2 left-0 p-2 rounded-full text-sky-200 hover:text-white hover:bg-sky-500/20 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    aria-label="العودة"
-                >
-                    <BackArrowIcon className="w-6 h-6" />
-                </button>
-                <h2 className="text-2xl font-bold text-center text-white text-shadow">إعادة تعيين كلمة المرور</h2>
-            </div>
+        <div className="w-full bg-slate-900/50 backdrop-blur-md border border-slate-700 rounded-2xl p-8 shadow-2xl relative">
+            <button 
+                onClick={() => setView('login')} 
+                className="absolute top-4 left-4 p-2 rounded-full text-slate-300 hover:text-white hover:bg-slate-700/50 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500"
+                aria-label="العودة"
+            >
+                <BackArrowIcon className="w-6 h-6" />
+            </button>
+            <h2 className="text-3xl font-bold text-center text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-sky-400 mb-6">
+                إعادة تعيين كلمة المرور
+            </h2>
             
             {submitted ? (
                 <div className="text-center text-white">
-                    <p className="mb-4">إذا كان بريدك الإلكتروني مسجلاً لدينا، فسيتم إرسال رسالة إليه.</p>
-                    <p className="mb-6 text-sky-200">يرجى التحقق من صندوق الوارد وخاصة مجلد الرسائل غير المرغوب فيها (السبام).</p>
+                    <ShieldCheckIcon className="w-16 h-16 mx-auto text-teal-400 mb-4" />
+                    <h3 className="text-xl font-bold mb-2">تم إرسال الرابط</h3>
+                    <p className="mb-6 text-slate-300">إذا كان بريدك الإلكتروني مسجلاً لدينا، فستصلك رسالة لإعادة التعيين. يرجى التحقق من صندوق الوارد والرسائل غير المرغوب فيها.</p>
                     <button
                         onClick={() => setView('login')}
-                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-sky-400"
+                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none bg-gradient-to-r from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 hover:shadow-teal-500/30 hover:scale-105 active:scale-95 focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-teal-400"
                     >
                         العودة لتسجيل الدخول
                     </button>
                 </div>
             ) : (
-                <form className="space-y-8" onSubmit={handleSubmit}>
+                <form className="space-y-6" onSubmit={handleSubmit}>
                     {error && <ErrorMessage message={error} />}
-                    <p className="text-center text-sky-200 -mt-4 mb-4">أدخل بريدك الإلكتروني المسجل وسنرسل لك رابطًا لإعادة تعيين كلمة المرور الخاصة بك.</p>
-                    <div className="relative z-0">
+                    <p className="text-center text-slate-300">أدخل بريدك الإلكتروني المسجل وسنرسل لك رابطًا لإعادة تعيين كلمة المرور.</p>
+                    <div className="relative">
+                         <EnvelopeIcon className="w-5 h-5 text-slate-400 absolute top-1/2 -translate-y-1/2 right-4" />
                         <input
                             type="email"
-                            id="forgot_email"
-                            className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer"
-                            placeholder=" "
+                            className="w-full bg-slate-800/60 border border-slate-700 rounded-lg py-3 pr-12 pl-4 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
+                            placeholder="البريد الإلكتروني"
                             aria-label="البريد الإلكتروني"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
                         />
-                         <label
-                            htmlFor="forgot_email"
-                            className="absolute text-lg text-sky-200 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[100%] peer-focus:origin-[100%] peer-focus:right-0 peer-focus:text-sky-300 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6"
-                        >
-                            البريد الإلكتروني
-                        </label>
                     </div>
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-orange-500 to-orange-700 hover:from-orange-400 hover:to-orange-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-orange-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale disabled:scale-100"
+                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg focus:outline-none bg-gradient-to-r from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 hover:shadow-teal-500/30 hover:scale-105 active:scale-95 focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-teal-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 disabled:shadow-none"
                     >
                         {loading ? 'جارِ الإرسال...' : 'إرسال رابط إعادة التعيين'}
                     </button>
@@ -746,7 +813,7 @@ const CounterBar: React.FC<{ label: string; progress: number; colorClass: string
                 className={`${colorClass} h-full rounded-md transition-none`}
                 style={{ width: `${progress}%` }}
             ></div>
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-start pr-4">
                 <span className="text-white font-bold text-lg text-shadow">{label}</span>
             </div>
         </div>
@@ -837,11 +904,11 @@ const HomeView: React.FC<{
                                         <SettingsIcon className="w-6 h-6 text-white"/>
                                     </button>
                                 </div>
-                                <CounterBar label={`0 شهران`} progress={0} colorClass="bg-orange-500" />
-                                <CounterBar label={`0 أيام`} progress={0} colorClass="bg-lime-500" />
-                                <CounterBar label={`0 ساعات`} progress={0} colorClass="bg-blue-500" />
-                                <CounterBar label={`0 دقائق`} progress={0} colorClass="bg-pink-500" />
-                                <CounterBar label={`0 ثواني`} progress={0} colorClass="bg-yellow-500" />
+                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'month')}`} progress={0} colorClass="bg-orange-500" />
+                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'day')}`} progress={0} colorClass="bg-lime-500" />
+                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'hour')}`} progress={0} colorClass="bg-blue-500" />
+                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'minute')}`} progress={0} colorClass="bg-pink-500" />
+                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'second')}`} progress={0} colorClass="bg-yellow-500" />
                             </div>
                        </div>
                     </div>
@@ -892,11 +959,11 @@ const HomeView: React.FC<{
                                     <SettingsIcon className="w-6 h-6 text-white"/>
                                 </button>
                             </div>
-                            <CounterBar label={`${timeDiff.months} شهران`} progress={(timeDiff.days / daysInCurrentMonth) * 100} colorClass="bg-orange-500" />
-                            <CounterBar label={`${timeDiff.days} أيام`} progress={(timeDiff.hours / 24) * 100} colorClass="bg-lime-500" />
-                            <CounterBar label={`${timeDiff.hours} ساعات`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-blue-500" />
-                            <CounterBar label={`${timeDiff.minutes} دقائق`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-pink-500" />
-                            <CounterBar label={`${timeDiff.seconds} ثواني`} progress={((timeDiff.seconds * 1000 + milliseconds) / 60000) * 100} colorClass="bg-yellow-500" />
+                            <CounterBar label={`${timeDiff.months} ${getArabicUnitLabel(timeDiff.months, 'month')}`} progress={(timeDiff.days / daysInCurrentMonth) * 100} colorClass="bg-orange-500" />
+                            <CounterBar label={`${timeDiff.days} ${getArabicUnitLabel(timeDiff.days, 'day')}`} progress={(timeDiff.hours / 24) * 100} colorClass="bg-lime-500" />
+                            <CounterBar label={`${timeDiff.hours} ${getArabicUnitLabel(timeDiff.hours, 'hour')}`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-blue-500" />
+                            <CounterBar label={`${timeDiff.minutes} ${getArabicUnitLabel(timeDiff.minutes, 'minute')}`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-pink-500" />
+                            <CounterBar label={`${timeDiff.seconds} ${getArabicUnitLabel(timeDiff.seconds, 'second')}`} progress={((timeDiff.seconds * 1000 + milliseconds) / 60000) * 100} colorClass="bg-yellow-500" />
                         </div>
                    </div>
                 </div>
@@ -972,7 +1039,7 @@ const LockScreen: React.FC<{ onUnlock: () => void }> = ({ onUnlock }) => {
     return (
         <main 
             className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
-            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop')" }}
+            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=2070&auto=format&fit=crop')" }}
         >
             <div className="w-full max-w-sm bg-sky-950/80 rounded-2xl shadow-xl p-8 space-y-6 relative backdrop-blur-xl border border-sky-300/30 text-white">
                 <div className="text-center">
@@ -1143,17 +1210,10 @@ const SettingsView: React.FC<{
                 photoURL: photoPreview,
             });
 
-            if (user.isAnonymous) {
-                localStorage.setItem('guestProfile', JSON.stringify({
-                    displayName: displayName,
-                    photoURL: photoPreview,
-                }));
-            } else {
-                await db.collection('users').doc(user.uid).update({
-                    displayName: displayName,
-                    photoURL: photoPreview,
-                });
-            }
+            await db.collection('users').doc(user.uid).update({
+                displayName: displayName,
+                photoURL: photoPreview,
+            });
             
             setMessage('تم تحديث الملف الشخصي بنجاح!');
             setTimeout(() => setMessage(''), 3000);
@@ -1622,7 +1682,7 @@ const NotificationsModal: React.FC<{
     );
 
     const FormComponent = (
-        <form onSubmit={handleSubmit} className="p-4 space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
             {error && <ErrorMessage message={error} />}
             <div className="relative z-0">
                 <input id="notif_title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="block py-2.5 px-0 w-full text-lg text-white bg-transparent border-0 border-b-2 border-sky-400/30 appearance-none focus:outline-none focus:ring-0 focus:border-sky-300 peer" placeholder=" " required />
@@ -1668,15 +1728,20 @@ const MessageActionModal: React.FC<{
     onDelete?: () => void;
     onPin?: () => void;
     onCopy: () => void;
+    onReply: () => void;
     isPinned: boolean;
     canPin: boolean;
     canEdit: boolean;
     canDelete: boolean;
-}> = ({ onClose, onEdit, onDelete, onPin, onCopy, isPinned, canPin, canEdit, canDelete }) => (
+}> = ({ onClose, onEdit, onDelete, onPin, onCopy, onReply, isPinned, canPin, canEdit, canDelete }) => (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onClose}>
         <div className="w-full max-w-sm bg-sky-950/90 border border-sky-500/50 rounded-lg p-6 space-y-4 text-white" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-xl font-bold text-sky-300 text-center">إجراءات الرسالة</h3>
             <div className="flex flex-col gap-4 pt-4">
+                 <button onClick={onReply} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                    <ReplyIcon className="w-6 h-6 text-sky-300"/>
+                    <span>رد</span>
+                </button>
                 <button onClick={onCopy} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
                     <CopyIcon className="w-6 h-6 text-sky-300"/>
                     <span>نسخ النص</span>
@@ -1900,6 +1965,7 @@ const ChatModal: React.FC<{
     currentUserProfile: UserProfile | null;
     blockedUsers: string[];
     onStartPrivateChat: (user: UserProfile) => void;
+    onOpenGroupChat: (group: Group) => void;
     onBlockUser: (user: UserProfile) => void;
     onUnblockUser: (uid: string) => void;
     hasUnreadPrivateMessages: boolean;
@@ -1910,7 +1976,7 @@ const ChatModal: React.FC<{
     handleDeleteMessage: (id: string) => void;
     showAlert: (message: string, type?: 'error' | 'success') => void;
     isDeveloper: boolean;
-}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage, showAlert, isDeveloper }) => {
+}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onOpenGroupChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage, showAlert, isDeveloper }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
@@ -1921,12 +1987,13 @@ const ChatModal: React.FC<{
     const [editText, setEditText] = useState('');
     const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
     const [messageForAction, setMessageForAction] = useState<Message | null>(null);
+    const [replyTo, setReplyTo] = useState<Message | null>(null);
     
     const [reactingToMessageId, setReactingToMessageId] = useState<string | null>(null);
     const reactionMenuRef = useRef<HTMLDivElement>(null);
     
     const [userForAction, setUserForAction] = useState<UserProfile | null>(null);
-    const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
+    const [activeTab, setActiveTab] = useState<'public' | 'private' | 'groups'>('public');
 
     const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
     const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
@@ -2021,15 +2088,26 @@ const ChatModal: React.FC<{
         const { uid, displayName, photoURL } = user;
         setLoading(true);
 
+        const messageData: any = {
+            text: newMessage,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            uid,
+            displayName,
+            photoURL
+        };
+
+        if (replyTo) {
+            messageData.replyTo = {
+                id: replyTo.id,
+                text: replyTo.text,
+                displayName: replyTo.displayName,
+            };
+        }
+
         try {
-            await db.collection('messages').add({
-                text: newMessage,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                uid,
-                displayName,
-                photoURL
-            });
+            await db.collection('messages').add(messageData);
             setNewMessage('');
+            setReplyTo(null);
         } catch (error) {
             console.error("Error sending message:", error);
         } finally {
@@ -2101,6 +2179,11 @@ const ChatModal: React.FC<{
         setMessageForAction(null);
     };
 
+    const handleReply = (message: Message) => {
+        setReplyTo(message);
+        setMessageForAction(null);
+    };
+
     // --- FIX START: Wrapper functions for admin actions to ensure real-time UI updates ---
     const wrappedOnToggleAdmin = async () => {
         if (!userForAction) return;
@@ -2167,16 +2250,22 @@ const ChatModal: React.FC<{
                     <div className="flex border border-sky-600 rounded-lg p-1">
                         <button 
                             onClick={() => setActiveTab('public')}
-                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'public' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'public' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
                         >
                             الدردشة العامة
                         </button>
                          <button 
                             onClick={() => setActiveTab('private')}
-                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors relative ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors relative ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
                         >
                             المحادثات الخاصة
                              {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('groups')}
+                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'groups' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                        >
+                            المجموعات
                         </button>
                     </div>
                 </header>
@@ -2257,6 +2346,12 @@ const ChatModal: React.FC<{
                                                 )}
 
                                                 <p className="text-sm font-bold text-sky-200 mb-1">{isSenderAdmin && '⭐ '}{msg.displayName}</p>
+                                                {msg.replyTo && (
+                                                    <div className="mb-2 p-2 border-r-2 border-sky-400 bg-black/20 rounded-md">
+                                                        <p className="text-xs font-bold text-sky-300">{msg.replyTo.displayName}</p>
+                                                        <p className="text-sm text-sky-300/80 truncate">{msg.replyTo.text}</p>
+                                                    </div>
+                                                )}
                                                 <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
                                                 
                                                 {msg.reactions && Object.keys(msg.reactions).length > 0 && (
@@ -2296,12 +2391,23 @@ const ChatModal: React.FC<{
                         })}
                         <div ref={messagesEndRef} />
                     </div>
-                   ) : (
+                   ) : activeTab === 'private' ? (
                        <PrivateConversationsList user={user} onConversationSelect={onStartPrivateChat}/>
+                   ) : (
+                       <GroupsList user={user} onSelectGroup={onOpenGroupChat} isDeveloper={isDeveloper} showAlert={showAlert} />
                    )}
                 </main>
                 {activeTab === 'public' && (
                     <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
+                        {replyTo && (
+                            <div className="relative p-2 mb-2 bg-sky-800/50 rounded-lg text-sm">
+                                <p className="text-sky-300">رد على <span className="font-bold">{replyTo.displayName}</span></p>
+                                <p className="text-white/70 truncate">{replyTo.text}</p>
+                                <button onClick={() => setReplyTo(null)} className="absolute top-1 left-1 p-1 rounded-full hover:bg-white/10">
+                                    <XMarkIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
                         <form onSubmit={handleSendMessage} className="flex items-center gap-3">
                             <input
                                 type="text"
@@ -2323,6 +2429,7 @@ const ChatModal: React.FC<{
                 <MessageActionModal
                     onClose={() => setMessageForAction(null)}
                     onCopy={() => handleCopy(messageForAction.text)}
+                    onReply={() => handleReply(messageForAction)}
                     canEdit={messageForAction.uid === user.uid}
                     onEdit={() => handleEdit(messageForAction)}
                     canDelete={messageForAction.uid === user.uid || isCurrentUserAdmin}
@@ -2388,6 +2495,7 @@ const PrivateChatModal: React.FC<{
     const [editText, setEditText] = useState('');
     const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
     const [messageForAction, setMessageForAction] = useState<Message | null>(null);
+    const [replyTo, setReplyTo] = useState<Message | null>(null);
     
     const [reactingToMessageId, setReactingToMessageId] = useState<string | null>(null);
     const reactionMenuRef = useRef<HTMLDivElement>(null);
@@ -2450,15 +2558,26 @@ const PrivateChatModal: React.FC<{
         const { uid, displayName, photoURL, email } = user;
         setLoading(true);
 
+        const messageData: any = {
+            text: newMessage,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            uid,
+            displayName,
+            photoURL
+        };
+
+        if (replyTo) {
+            messageData.replyTo = {
+                id: replyTo.id,
+                text: replyTo.text,
+                displayName: replyTo.displayName,
+            };
+        }
+
         try {
-            await messagesCollection.add({
-                text: newMessage,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                uid,
-                displayName,
-                photoURL
-            });
+            await messagesCollection.add(messageData);
              setNewMessage('');
+             setReplyTo(null);
 
             const timestamp = firebase.firestore.FieldValue.serverTimestamp();
             
@@ -2544,6 +2663,11 @@ const PrivateChatModal: React.FC<{
         setMessageForAction(null);
     };
 
+    const handleReply = (message: Message) => {
+        setReplyTo(message);
+        setMessageForAction(null);
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -2616,6 +2740,12 @@ const PrivateChatModal: React.FC<{
                                                     ))}
                                                 </div>
                                             )}
+                                            {msg.replyTo && (
+                                                <div className="mb-2 p-2 border-r-2 border-sky-400 bg-black/20 rounded-md">
+                                                    <p className="text-xs font-bold text-sky-300">{msg.replyTo.displayName}</p>
+                                                    <p className="text-sm text-sky-300/80 truncate">{msg.replyTo.text}</p>
+                                                </div>
+                                            )}
                                             <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
                                             
                                             {msg.reactions && Object.keys(msg.reactions).length > 0 && (
@@ -2666,6 +2796,16 @@ const PrivateChatModal: React.FC<{
                             <button onClick={() => onUnblockUser(otherUser.uid)} className="font-bold text-green-300 hover:underline">إلغاء الحظر</button>
                         </div>
                     ) : (
+                        <>
+                         {replyTo && (
+                            <div className="relative p-2 mb-2 bg-sky-800/50 rounded-lg text-sm">
+                                <p className="text-sky-300">رد على <span className="font-bold">{replyTo.displayName}</span></p>
+                                <p className="text-white/70 truncate">{replyTo.text}</p>
+                                <button onClick={() => setReplyTo(null)} className="absolute top-1 left-1 p-1 rounded-full hover:bg-white/10">
+                                    <XMarkIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                         )}
                         <form onSubmit={handleSendMessage} className="flex items-center gap-3">
                             <input
                                 type="text"
@@ -2679,6 +2819,7 @@ const PrivateChatModal: React.FC<{
                                 <SendIcon className="w-6 h-6"/>
                             </button>
                         </form>
+                        </>
                     )}
                 </footer>
             </div>
@@ -2687,6 +2828,7 @@ const PrivateChatModal: React.FC<{
                 <MessageActionModal
                     onClose={() => setMessageForAction(null)}
                     onCopy={() => handleCopy(messageForAction.text)}
+                    onReply={() => handleReply(messageForAction)}
                     canEdit={messageForAction.uid === user.uid}
                     onEdit={() => handleEdit(messageForAction)}
                     canDelete={messageForAction.uid === user.uid}
@@ -2722,6 +2864,7 @@ const LoggedInLayout: React.FC<{
     const [userToBlock, setUserToBlock] = useState<UserProfile | null>(null);
     const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
     const [hasUnreadPrivateMessages, setHasUnreadPrivateMessages] = useState(false);
+    const [activeGroup, setActiveGroup] = useState<Group | null>(null);
 
     const isDeveloper = DEVELOPER_UIDS.includes(user.uid);
 
@@ -2848,6 +2991,47 @@ const LoggedInLayout: React.FC<{
         await db.collection('messages').doc(messageId).delete();
     };
 
+    const handleUpdateMemberRole = async (groupId: string, memberUid: string, newRole: GroupMemberRole) => {
+        try {
+            await db.collection('groups').doc(groupId).collection('members').doc(memberUid).update({ role: newRole });
+            showAlert('تم تحديث دور العضو بنجاح.', 'success');
+        } catch (error) {
+            console.error("Error updating member role:", error);
+            showAlert('فشل تحديث دور العضو.');
+        }
+    };
+
+    const handleKickMember = async (groupId: string, member: GroupMember) => {
+        try {
+            const batch = db.batch();
+            const groupRef = db.collection('groups').doc(groupId);
+            const memberRef = groupRef.collection('members').doc(member.uid);
+            batch.delete(memberRef);
+            batch.update(groupRef, { memberUids: firebase.firestore.FieldValue.arrayRemove(member.uid) });
+            await batch.commit();
+            showAlert(`تم طرد ${member.displayName} من المجموعة.`, 'success');
+        } catch (error) {
+            console.error("Error kicking member:", error);
+            showAlert('فشل طرد العضو.');
+        }
+    };
+
+    const handleLeaveGroup = async (group: Group) => {
+        try {
+            const batch = db.batch();
+            const groupRef = db.collection('groups').doc(group.id);
+            const memberRef = groupRef.collection('members').doc(user.uid);
+            batch.delete(memberRef);
+            batch.update(groupRef, { memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid) });
+            await batch.commit();
+            setActiveGroup(null);
+            showAlert(`لقد غادرت مجموعة "${group.name}".`, 'success');
+        } catch (error) {
+            console.error("Error leaving group:", error);
+            showAlert('فشل مغادرة المجموعة.');
+        }
+    };
+
     const updateStartDate = async (newDate: Date) => {
         setStartDate(newDate);
         if (user.isAnonymous) {
@@ -2915,7 +3099,10 @@ const LoggedInLayout: React.FC<{
     };
 
     return (
-        <div className="w-full min-h-screen">
+        <div 
+            className="w-full min-h-screen bg-cover bg-center"
+            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=2070&auto=format&fit=crop')" }}
+        >
             <div className="w-full max-w-md mx-auto px-4 pb-20">
                  {renderActiveView()}
             </div>
@@ -2930,6 +3117,7 @@ const LoggedInLayout: React.FC<{
                 currentUserProfile={currentUserProfile}
                 blockedUsers={blockedUsers}
                 onStartPrivateChat={(targetUser) => { setPrivateChatTargetUser(targetUser); setShowChat(false); }}
+                onOpenGroupChat={(group) => { setActiveGroup(group); setShowChat(false); }}
                 onBlockUser={(targetUser) => setUserToBlock(targetUser)}
                 onUnblockUser={handleUnblockUser}
                 hasUnreadPrivateMessages={hasUnreadPrivateMessages}
@@ -2950,6 +3138,20 @@ const LoggedInLayout: React.FC<{
                     isBlocked={blockedUsers.includes(privateChatTargetUser.uid)}
                     onBlockUser={(targetUser) => setUserToBlock(targetUser)}
                     onUnblockUser={handleUnblockUser}
+                />
+            )}
+            {activeGroup && (
+                 <GroupChatModal
+                    isOpen={!!activeGroup}
+                    onClose={() => setActiveGroup(null)}
+                    user={user}
+                    group={activeGroup}
+                    currentUserProfile={currentUserProfile}
+                    showAlert={showAlert}
+                    isDeveloper={isDeveloper}
+                    onLeaveGroup={handleLeaveGroup}
+                    onKickMember={handleKickMember}
+                    onUpdateMemberRole={handleUpdateMemberRole}
                 />
             )}
             {userToBlock && (
@@ -2988,186 +3190,795 @@ const CustomAlert: React.FC<{ message: string; type: 'error' | 'success'; onClos
     );
 };
 
+// --- Groups Components ---
 
-// --- App Component ---
+const DeleteGroupConfirmationModal: React.FC<{ 
+    groupName: string; 
+    onConfirm: () => void; 
+    onClose: () => void;
+    loading: boolean;
+}> = ({ groupName, onConfirm, onClose, loading }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
+            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حذف المجموعة</h3>
+            <p className="text-sky-200 text-center">
+                هل أنت متأكد من رغبتك في حذف مجموعة <span className="font-bold">{groupName}</span>؟ سيتم حذف جميع الرسائل والأعضاء بشكل دائم.
+            </p>
+            <div className="flex justify-center gap-4 pt-4">
+                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500">
+                    إلغاء
+                </button>
+                <button onClick={onConfirm} disabled={loading} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-red-500 disabled:opacity-50 disabled:cursor-wait">
+                    {loading ? 'جارِ الحذف...' : 'حذف'}
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+const CreateGroupModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    user: firebase.User;
+}> = ({ isOpen, onClose, user }) => {
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+    const [photoURL, setPhotoURL] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleImageUpload = () => {
+        const dialog = uploadcare.openDialog(null, {
+            publicKey: 'e5cdcd97e0e41d6aa881',
+            imagesOnly: true,
+            crop: "1:1",
+        });
+        dialog.done((file: any) => file.promise().done((fileInfo: any) => setPhotoURL(fileInfo.cdnUrl)));
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!name.trim()) {
+            setError('اسم المجموعة مطلوب.');
+            return;
+        }
+        setLoading(true);
+        setError('');
+        try {
+            const groupRef = db.collection('groups').doc();
+            const memberRef = groupRef.collection('members').doc(user.uid);
+            
+            const batch = db.batch();
+
+            batch.set(groupRef, {
+                name,
+                description,
+                photoURL,
+                ownerUid: user.uid,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                memberUids: [user.uid]
+            });
+            
+            batch.set(memberRef, {
+                displayName: user.displayName,
+                photoURL: user.photoURL,
+                role: 'owner'
+            });
+
+            await batch.commit();
+            onClose();
+
+        } catch (err) {
+            console.error("Error creating group:", err);
+            setError('حدث خطأ أثناء إنشاء المجموعة.');
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    if(!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <div className="w-full max-w-md bg-sky-950/90 text-white flex flex-col rounded-lg border border-sky-400/30">
+                 <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-sky-200">إنشاء مجموعة جديدة</h2>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10"><XMarkIcon className="w-6 h-6"/></button>
+                </header>
+                <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                    {error && <ErrorMessage message={error} />}
+                    <div className="flex flex-col items-center space-y-4">
+                        <div className="relative">
+                            <img 
+                                src={photoURL || `https://ui-avatars.com/api/?name=${name || ' '}&background=164e63&color=fff&size=128`}
+                                alt="صورة المجموعة"
+                                className="w-24 h-24 rounded-full object-cover border-4 border-sky-400/50"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleImageUpload}
+                                className="absolute bottom-0 right-0 bg-sky-600 p-2 rounded-full hover:bg-sky-500"
+                            >
+                                <CameraIcon className="w-5 h-5 text-white"/>
+                            </button>
+                        </div>
+                    </div>
+                    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="اسم المجموعة" className="w-full bg-sky-900/50 border border-sky-400/30 rounded-lg py-2 px-4 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
+                    <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="وصف المجموعة (اختياري)" className="w-full bg-sky-900/50 border border-sky-400/30 rounded-lg py-2 px-4 h-24 resize-none focus:outline-none focus:ring-2 focus:ring-sky-500"/>
+                    <div className="flex justify-end gap-4 pt-4">
+                        <button type="button" onClick={onClose} className="px-4 py-2 font-semibold rounded-md bg-gray-600 hover:bg-gray-500">إلغاء</button>
+                        <button type="submit" disabled={loading} className="px-4 py-2 font-semibold rounded-md bg-sky-600 hover:bg-sky-500 disabled:opacity-50">
+                            {loading ? 'جارِ الإنشاء...' : 'إنشاء'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+const GroupsList: React.FC<{
+    user: firebase.User;
+    onSelectGroup: (group: Group) => void;
+    isDeveloper: boolean;
+    showAlert: (message: string, type?: 'error' | 'success') => void;
+}> = ({ user, onSelectGroup, isDeveloper, showAlert }) => {
+    const [groups, setGroups] = useState<Group[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+    const [groupToDelete, setGroupToDelete] = useState<Group | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+
+    useEffect(() => {
+        const unsubscribe = db.collection('groups').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+            const fetchedGroups = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
+            setGroups(fetchedGroups);
+            setLoading(false);
+        });
+        return unsubscribe;
+    }, []);
+    
+    const handleConfirmDelete = async () => {
+        if (!groupToDelete) return;
+        setIsDeleting(true);
+        const groupId = groupToDelete.id;
+        const groupRef = db.collection('groups').doc(groupId);
+
+        try {
+            const batch = db.batch();
+
+            const messagesSnapshot = await groupRef.collection('messages').get();
+            messagesSnapshot.forEach(doc => batch.delete(doc.ref));
+
+            const membersSnapshot = await groupRef.collection('members').get();
+            membersSnapshot.forEach(doc => batch.delete(doc.ref));
+
+            const requestsSnapshot = await groupRef.collection('joinRequests').get();
+            requestsSnapshot.forEach(doc => batch.delete(doc.ref));
+
+            batch.delete(groupRef);
+            await batch.commit();
+            showAlert(`تم حذف مجموعة "${groupToDelete.name}" بنجاح.`, 'success');
+        } catch (error) {
+            console.error("Error deleting group:", error);
+            showAlert('فشل حذف المجموعة.');
+        } finally {
+            setGroupToDelete(null);
+            setIsDeleting(false);
+        }
+    };
+
+    const joinedGroups = groups.filter(group => group.memberUids && group.memberUids.includes(user.uid));
+    const otherGroups = groups.filter(group => !group.memberUids || !group.memberUids.includes(user.uid));
+
+    if (loading) {
+        return <p className="text-center text-sky-400 py-8">جارِ تحميل المجموعات...</p>
+    }
+
+    const groupItem = (group: Group) => (
+         <div key={group.id} className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50 text-right group">
+            <button onClick={() => onSelectGroup(group)} className="w-full flex items-center gap-3 text-right flex-grow">
+                <img
+                    src={group.photoURL || `https://ui-avatars.com/api/?name=${group.name}&background=164e63&color=fff&size=128`}
+                    alt={group.name}
+                    className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                />
+                <div className="overflow-hidden">
+                    <p className="font-semibold truncate">{group.name}</p>
+                    <p className="text-sm text-sky-400 truncate">{group.description}</p>
+                </div>
+            </button>
+            {isDeveloper && (
+                <button 
+                    onClick={(e) => { e.stopPropagation(); setGroupToDelete(group); }} 
+                    className="p-2 text-red-500 hover:text-red-300 hover:bg-white/10 rounded-full transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 flex-shrink-0"
+                    aria-label={`حذف مجموعة ${group.name}`}
+                >
+                    <TrashIcon className="w-5 h-5"/>
+                </button>
+            )}
+        </div>
+    );
+
+    return (
+        <div className="p-2 space-y-2">
+            <button
+                onClick={() => setShowCreateGroupModal(true)}
+                className="w-full flex items-center justify-center gap-2 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-teal-500 to-teal-700 hover:from-teal-400 hover:to-teal-600 mb-4"
+            >
+                <PlusIcon className="w-6 h-6" />
+                <span>إنشاء مجموعة جديدة</span>
+            </button>
+
+            {groups.length === 0 ? (
+                <p className="text-center text-sky-400 py-8">لا توجد مجموعات حالياً.</p>
+            ) : (
+                <>
+                    {joinedGroups.length > 0 && (
+                        <div>
+                            <h3 className="text-lg font-semibold text-sky-200 px-2 my-4 border-b border-sky-400/30 pb-2">مجموعاتي</h3>
+                            {joinedGroups.map(groupItem)}
+                        </div>
+                    )}
+                    {otherGroups.length > 0 && (
+                         <div>
+                            <h3 className="text-lg font-semibold text-sky-200 px-2 my-4 border-b border-sky-400/30 pb-2">اكتشف مجموعات أخرى</h3>
+                            {otherGroups.map(groupItem)}
+                        </div>
+                    )}
+                </>
+            )}
+            
+            {showCreateGroupModal && (
+                <CreateGroupModal 
+                    isOpen={showCreateGroupModal}
+                    onClose={() => setShowCreateGroupModal(false)}
+                    user={user}
+                />
+            )}
+            {groupToDelete && (
+                 <DeleteGroupConfirmationModal 
+                    groupName={groupToDelete.name}
+                    onConfirm={handleConfirmDelete}
+                    onClose={() => setGroupToDelete(null)}
+                    loading={isDeleting}
+                />
+            )}
+        </div>
+    );
+};
+
+const KickConfirmationModal: React.FC<{ memberName: string; onConfirm: () => void; onClose: () => void; }> = ({ memberName, onConfirm, onClose }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
+            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد طرد العضو</h3>
+            <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في طرد {memberName} من المجموعة؟</p>
+            <div className="flex justify-center gap-4 pt-4">
+                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">إلغاء</button>
+                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">طرد</button>
+            </div>
+        </div>
+    </div>
+);
+
+const LeaveGroupConfirmationModal: React.FC<{ groupName: string; onConfirm: () => void; onClose: () => void; }> = ({ groupName, onConfirm, onClose }) => (
+     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
+            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد مغادرة المجموعة</h3>
+            <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في مغادرة {groupName}؟</p>
+            <div className="flex justify-center gap-4 pt-4">
+                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">إلغاء</button>
+                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">مغادرة</button>
+            </div>
+        </div>
+    </div>
+);
+
+const GroupMemberActionModal: React.FC<{
+    member: GroupMember;
+    onClose: () => void;
+    onKick: () => void;
+    onPromote?: () => void;
+    onDemote?: () => void;
+}> = ({ member, onClose, onKick, onPromote, onDemote }) => (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[65] p-4" onClick={onClose}>
+        <div className="w-full max-w-sm bg-sky-950/90 border border-sky-500/50 rounded-lg p-6 space-y-4 text-white" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-sky-300 text-center truncate">إجراءات لـ {member.displayName}</h3>
+            <div className="flex flex-col gap-4 pt-4">
+                {onPromote && (
+                    <button onClick={onPromote} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                        <ArrowUpCircleIcon className="w-6 h-6 text-green-400"/>
+                        <span className="text-green-400">ترقية لمشرف</span>
+                    </button>
+                )}
+                {onDemote && (
+                    <button onClick={onDemote} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
+                        <ArrowDownCircleIcon className="w-6 h-6 text-yellow-400"/>
+                        <span className="text-yellow-400">تخفيض لرتبة عضو</span>
+                    </button>
+                )}
+                <button onClick={onKick} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
+                    <UserMinusIcon className="w-6 h-6 text-red-400"/>
+                    <span className="text-red-400">طرد من المجموعة</span>
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+
+const GroupMembersModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    group: Group;
+    currentUserRole: GroupMemberRole;
+    currentUserUid: string;
+    onLeaveGroup: (group: Group) => void;
+    onKickMember: (groupId: string, member: GroupMember) => void;
+    onUpdateMemberRole: (groupId: string, memberUid: string, newRole: GroupMemberRole) => void;
+    showAlert: (message: string, type?: 'error' | 'success') => void;
+}> = ({ isOpen, onClose, group, currentUserRole, currentUserUid, onLeaveGroup, onKickMember, onUpdateMemberRole, showAlert }) => {
+    const [activeTab, setActiveTab] = useState<'members' | 'requests'>('members');
+    const [members, setMembers] = useState<GroupMember[]>([]);
+    const [requests, setRequests] = useState<JoinRequest[]>([]);
+    const [loadingMembers, setLoadingMembers] = useState(true);
+    const [loadingRequests, setLoadingRequests] = useState(true);
+    const [memberForAction, setMemberForAction] = useState<GroupMember | null>(null);
+    const [showKickConfirm, setShowKickConfirm] = useState(false);
+    const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        
+        const membersRef = db.collection('groups').doc(group.id).collection('members');
+        const unsubscribeMembers = membersRef.onSnapshot(snapshot => {
+            const fetchedMembers = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as GroupMember));
+            const visibleMembers = fetchedMembers.filter(member => !DEVELOPER_UIDS.includes(member.uid));
+            setMembers(visibleMembers);
+            setLoadingMembers(false);
+        });
+
+        let unsubscribeRequests = () => {};
+        if (currentUserRole === 'owner' || currentUserRole === 'admin') {
+            const requestsRef = db.collection('groups').doc(group.id).collection('joinRequests').orderBy('timestamp', 'desc');
+            unsubscribeRequests = requestsRef.onSnapshot(snapshot => {
+                const fetchedRequests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JoinRequest));
+                setRequests(fetchedRequests);
+                setLoadingRequests(false);
+            });
+        }
+
+        return () => {
+            unsubscribeMembers();
+            unsubscribeRequests();
+        };
+    }, [isOpen, group.id, currentUserRole, currentUserUid]);
+
+    const handleApproveRequest = async (request: JoinRequest) => {
+        const batch = db.batch();
+        const groupRef = db.collection('groups').doc(group.id);
+        const memberRef = groupRef.collection('members').doc(request.id);
+        const requestRef = groupRef.collection('joinRequests').doc(request.id);
+
+        batch.set(memberRef, {
+            displayName: request.displayName,
+            photoURL: request.photoURL,
+            role: 'member'
+        });
+        batch.update(groupRef, {
+            memberUids: firebase.firestore.FieldValue.arrayUnion(request.id)
+        });
+        batch.delete(requestRef);
+
+        await batch.commit();
+        showAlert(`${request.displayName} تمت الموافقة على انضمامه.`, 'success');
+    };
+
+    const handleDenyRequest = async (requestId: string) => {
+        await db.collection('groups').doc(group.id).collection('joinRequests').doc(requestId).delete();
+    };
+
+    if (!isOpen) return null;
+
+    const canManage = currentUserRole === 'owner' || currentUserRole === 'admin';
+
+    return (
+        <>
+         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
+                <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-sky-200">أعضاء المجموعة</h2>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10"><XMarkIcon className="w-6 h-6"/></button>
+                </header>
+                {canManage && (
+                     <div className="flex border-b border-sky-600 p-1 flex-shrink-0">
+                        <button onClick={() => setActiveTab('members')} className={`w-1/2 py-2 text-sm font-semibold transition-colors ${activeTab === 'members' ? 'border-b-2 border-sky-300 text-sky-200' : 'text-sky-400 hover:text-white'}`}>
+                            الأعضاء ({members.length})
+                        </button>
+                        <button onClick={() => setActiveTab('requests')} className={`w-1/2 py-2 text-sm font-semibold transition-colors ${activeTab === 'requests' ? 'border-b-2 border-sky-300 text-sky-200' : 'text-sky-400 hover:text-white'}`}>
+                            الطلبات ({requests.length})
+                        </button>
+                    </div>
+                )}
+                <main className="flex-grow overflow-y-auto p-2">
+                    {activeTab === 'members' ? (
+                        loadingMembers ? <p className="text-center p-4">جارِ التحميل...</p> : (
+                            members.map(member => {
+                                const canManageThisMember = (currentUserRole === 'owner' && member.uid !== currentUserUid) || (currentUserRole === 'admin' && member.role === 'member' && member.uid !== currentUserUid);
+                                return (
+                                <div key={member.uid} className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50 group">
+                                    <div className="flex items-center gap-3">
+                                        <img src={member.photoURL || `https://ui-avatars.com/api/?name=${member.displayName}&background=0284c7&color=fff&size=128`} alt={member.displayName} className="w-10 h-10 rounded-full object-cover"/>
+                                        <div>
+                                            <p>{member.displayName}</p>
+                                            <p className="text-xs text-sky-400 capitalize">{member.role}</p>
+                                        </div>
+                                    </div>
+                                    {canManageThisMember && (
+                                        <button onClick={() => setMemberForAction(member)} className="p-2 rounded-full text-sky-300 hover:bg-sky-700/50 opacity-0 group-hover:opacity-100 focus:opacity-100">
+                                            <DotsVerticalIcon className="w-5 h-5"/>
+                                        </button>
+                                    )}
+                                </div>
+                            )})
+                        )
+                    ) : (
+                        loadingRequests ? <p className="text-center p-4">جارِ التحميل...</p> : requests.length > 0 ? (
+                             requests.map(request => (
+                                <div key={request.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50">
+                                    <div className="flex items-center gap-3">
+                                        <img src={request.photoURL || `https://ui-avatars.com/api/?name=${request.displayName}&background=0284c7&color=fff&size=128`} alt={request.displayName} className="w-10 h-10 rounded-full object-cover"/>
+                                        <p>{request.displayName}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleDenyRequest(request.id)} className="px-3 py-1 text-sm bg-red-800/80 hover:bg-red-700/80 rounded-md">رفض</button>
+                                        <button onClick={() => handleApproveRequest(request)} className="px-3 py-1 text-sm bg-green-800/80 hover:bg-green-700/80 rounded-md">موافقة</button>
+                                    </div>
+                                </div>
+                            ))
+                        ) : <p className="text-center text-sky-400 p-8">لا توجد طلبات انضمام.</p>
+                    )}
+                </main>
+                 {currentUserRole !== 'owner' && (
+                    <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
+                        <button onClick={() => setShowLeaveConfirm(true)} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
+                            <ArrowLeftOnRectangleIcon className="w-6 h-6 text-red-300"/>
+                            <span className="font-semibold text-red-300">مغادرة المجموعة</span>
+                        </button>
+                    </footer>
+                )}
+            </div>
+        </div>
+        {memberForAction && (
+            <GroupMemberActionModal 
+                member={memberForAction}
+                onClose={() => setMemberForAction(null)}
+                onPromote={currentUserRole === 'owner' && memberForAction.role === 'member' ? () => {
+                    onUpdateMemberRole(group.id, memberForAction.uid, 'admin');
+                    setMemberForAction(null);
+                } : undefined}
+                onDemote={currentUserRole === 'owner' && memberForAction.role === 'admin' ? () => {
+                    onUpdateMemberRole(group.id, memberForAction.uid, 'member');
+                    setMemberForAction(null);
+                } : undefined}
+                onKick={() => { setShowKickConfirm(true); }}
+            />
+        )}
+        {showKickConfirm && memberForAction && (
+            <KickConfirmationModal 
+                memberName={memberForAction.displayName}
+                onConfirm={() => {
+                    onKickMember(group.id, memberForAction);
+                    setShowKickConfirm(false);
+                    setMemberForAction(null);
+                }}
+                onClose={() => {
+                    setShowKickConfirm(false);
+                    setMemberForAction(null);
+                }}
+            />
+        )}
+        {showLeaveConfirm && (
+            <LeaveGroupConfirmationModal 
+                groupName={group.name}
+                onConfirm={() => {
+                    onLeaveGroup(group);
+                    setShowLeaveConfirm(false);
+                }}
+                onClose={() => setShowLeaveConfirm(false)}
+            />
+        )}
+        </>
+    );
+};
+
+const GroupChatModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    user: firebase.User;
+    group: Group;
+    currentUserProfile: UserProfile | null;
+    showAlert: (message: string, type?: 'error' | 'success') => void;
+    isDeveloper: boolean;
+    onLeaveGroup: (group: Group) => void;
+    onKickMember: (groupId: string, member: GroupMember) => void;
+    onUpdateMemberRole: (groupId: string, memberUid: string, newRole: GroupMemberRole) => void;
+}> = ({ isOpen, onClose, user, group, currentUserProfile, showAlert, isDeveloper, onLeaveGroup, onKickMember, onUpdateMemberRole }) => {
+    const [loading, setLoading] = useState(true);
+    const [membership, setMembership] = useState<{ role: GroupMemberRole | 'non-member' | 'pending' } | null>(null);
+
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [newMessage, setNewMessage] = useState('');
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const [replyTo, setReplyTo] = useState<Message | null>(null);
+    const [showMembersModal, setShowMembersModal] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setLoading(true);
+
+        const memberRef = db.collection('groups').doc(group.id).collection('members').doc(user.uid);
+        const unsubscribeMember = memberRef.onSnapshot(async (doc) => {
+            if (doc.exists) {
+                const memberData = doc.data() as GroupMember;
+                setMembership({ role: memberData.role });
+                setLoading(false);
+            } else {
+                 if (isDeveloper) {
+                    try {
+                        const groupRef = db.collection('groups').doc(group.id);
+                        const devMemberRef = groupRef.collection('members').doc(user.uid);
+                        
+                        const batch = db.batch();
+                        batch.update(groupRef, { memberUids: firebase.firestore.FieldValue.arrayUnion(user.uid) });
+                        batch.set(devMemberRef, {
+                            displayName: user.displayName,
+                            photoURL: user.photoURL,
+                            role: 'member'
+                        });
+                        await batch.commit();
+                    } catch (error) {
+                        console.error("Developer auto-join failed:", error);
+                        showAlert("Failed to auto-join as developer.");
+                        setMembership({ role: 'non-member' });
+                        setLoading(false);
+                    }
+                } else {
+                    const requestRef = db.collection('groups').doc(group.id).collection('joinRequests').doc(user.uid);
+                    const reqDoc = await requestRef.get();
+                    setMembership({ role: reqDoc.exists ? 'pending' : 'non-member' });
+                    setLoading(false);
+                }
+            }
+        });
+
+        return () => unsubscribeMember();
+    }, [isOpen, group.id, user.uid, isDeveloper, showAlert, user.displayName, user.photoURL]);
+
+    useEffect(() => {
+        if (!isOpen || !membership || !['member', 'admin', 'owner'].includes(membership.role)) {
+            setMessages([]); // Clear messages if not a member
+            return;
+        }
+        
+        const messagesRef = db.collection('groups').doc(group.id).collection('messages').orderBy('timestamp', 'asc').limit(100);
+        const unsubscribeMessages = messagesRef.onSnapshot(snapshot => {
+            const fetchedMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
+            setMessages(fetchedMessages);
+        });
+
+        return () => unsubscribeMessages();
+
+    }, [isOpen, group.id, membership]);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
+    const handleJoinRequest = async () => {
+        try {
+            await db.collection('groups').doc(group.id).collection('joinRequests').doc(user.uid).set({
+                displayName: user.displayName,
+                photoURL: user.photoURL,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            });
+            setMembership({ role: 'pending' });
+            showAlert('تم إرسال طلب الانضمام بنجاح.', 'success');
+        } catch (error) {
+            console.error("Error sending join request:", error);
+            showAlert('حدث خطأ أثناء إرسال طلب الانضمام.');
+        }
+    };
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newMessage.trim()) return;
+
+        const { uid, displayName, photoURL } = user;
+        const messageData: any = {
+            text: newMessage,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            uid, displayName, photoURL
+        };
+        if (replyTo) {
+            messageData.replyTo = {
+                id: replyTo.id, text: replyTo.text, displayName: replyTo.displayName,
+            };
+        }
+        await db.collection('groups').doc(group.id).collection('messages').add(messageData);
+        setNewMessage('');
+        setReplyTo(null);
+    };
+
+    const handleReaction = async (messageId: string, emoji: string) => {
+        const messageRef = db.collection('groups').doc(group.id).collection('messages').doc(messageId);
+        await db.runTransaction(async (transaction) => {
+            const doc = await transaction.get(messageRef);
+            if (!doc.exists) return;
+            const reactions = doc.data()?.reactions || {};
+            const uidsForEmoji = reactions[emoji] || [];
+            if (uidsForEmoji.includes(user.uid)) {
+                reactions[emoji] = uidsForEmoji.filter((uid: string) => uid !== user.uid);
+                if (reactions[emoji].length === 0) delete reactions[emoji];
+            } else {
+                reactions[emoji] = [...uidsForEmoji, user.uid];
+            }
+            transaction.update(messageRef, { reactions });
+        });
+    };
+    
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[55]">
+            <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
+                <header className="flex items-center justify-between p-4 border-b border-sky-400/30">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                        <img src={group.photoURL || `https://ui-avatars.com/api/?name=${group.name}&background=164e63&color=fff&size=128`} alt={group.name} className="w-10 h-10 rounded-full object-cover flex-shrink-0"/>
+                        <div className="overflow-hidden">
+                            <h2 className="text-lg font-bold text-sky-200 truncate">{group.name}</h2>
+                            <p className="text-xs text-sky-400 truncate">{group.description}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {membership?.role && ['member', 'admin', 'owner'].includes(membership.role) && (
+                            <button onClick={() => setShowMembersModal(true)} className="p-2 rounded-full hover:bg-white/10"><UsersIcon className="w-6 h-6"/></button>
+                        )}
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10"><XMarkIcon className="w-6 h-6"/></button>
+                    </div>
+                </header>
+                <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                    {loading ? (
+                        <p className="text-center p-8">جارِ التحميل...</p>
+                    ) : membership?.role && ['member', 'admin', 'owner'].includes(membership.role) ? (
+                         messages.map(msg => (
+                            <div key={msg.id} className={`flex items-start gap-3 ${msg.uid === user.uid ? 'flex-row-reverse' : ''}`}>
+                                <img src={msg.photoURL || `https://ui-avatars.com/api/?name=${msg.displayName}&background=0284c7&color=fff&size=128`} alt={msg.displayName} className="w-10 h-10 rounded-full object-cover flex-shrink-0"/>
+                                <div className={`flex flex-col w-full ${msg.uid === user.uid ? 'items-end' : 'items-start'}`}>
+                                    <div className={`relative p-3 rounded-2xl max-w-xs md:max-w-md ${msg.uid === user.uid ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}>
+                                        <p className="text-sm font-bold text-sky-200 mb-1">{msg.displayName}</p>
+                                        <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
+                                    </div>
+                                    <p className="text-xs text-sky-500 mt-1 px-1">{msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit'}) : '...'}</p>
+                                </div>
+                            </div>
+                         ))
+                    ) : membership?.role === 'pending' ? (
+                        <div className="text-center p-8 text-sky-300">طلبك للانضمام قيد المراجعة.</div>
+                    ) : (
+                         <div className="text-center p-8 flex flex-col items-center gap-4">
+                            <p className="text-sky-300">أنت لست عضواً في هذه المجموعة.</p>
+                            <button onClick={handleJoinRequest} className="px-6 py-2 font-semibold rounded-md bg-sky-600 hover:bg-sky-500">
+                                إرسال طلب انضمام
+                            </button>
+                        </div>
+                    )}
+                     <div ref={messagesEndRef} />
+                </main>
+                {membership?.role && ['member', 'admin', 'owner'].includes(membership.role) && (
+                     <footer className="p-4 border-t border-sky-400/30">
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+                            <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="اكتب رسالتك..." className="flex-grow bg-sky-900/50 border border-sky-400/30 rounded-full py-2 px-4 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
+                            <button type="submit" className="bg-sky-600 text-white p-3 rounded-full hover:bg-sky-500 disabled:bg-sky-800" disabled={!newMessage.trim()}><SendIcon className="w-6 h-6"/></button>
+                        </form>
+                    </footer>
+                )}
+            </div>
+            {showMembersModal && membership?.role && (
+                 <GroupMembersModal 
+                    isOpen={showMembersModal}
+                    onClose={() => setShowMembersModal(false)}
+                    group={group}
+                    currentUserRole={membership.role as GroupMemberRole}
+                    currentUserUid={user.uid}
+                    onLeaveGroup={onLeaveGroup}
+                    onKickMember={onKickMember}
+                    onUpdateMemberRole={onUpdateMemberRole}
+                    showAlert={showAlert}
+                />
+            )}
+        </div>
+    );
+};
+
+// --- Main App Component ---
+// FIX: Add the missing App component and its default export.
 const App: React.FC = () => {
     const [view, setView] = useState<View>('main');
     const [user, setUser] = useState<firebase.User | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isLocked, setIsLocked] = useState(false);
-    const [alertInfo, setAlertInfo] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
+    const [isLocked, setIsLocked] = useState(!!localStorage.getItem('appLockPin'));
+    const [alert, setAlert] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
 
-    const showAlert = (message: string, type: 'error' | 'success' = 'error') => {
-        setAlertInfo({ message, type });
-    };
 
     useEffect(() => {
-        const checkLockStatus = () => {
-            const pin = localStorage.getItem('appLockPin');
-            if (!pin) return;
-
-            const hiddenTimestamp = localStorage.getItem('appHiddenTimestamp');
-            if (hiddenTimestamp) {
-                const timeElapsed = Date.now() - parseInt(hiddenTimestamp, 10);
-                if (timeElapsed > 30000) { // 30 seconds
-                    setIsLocked(true);
-                }
-                // Always remove timestamp after checking
-                localStorage.removeItem('appHiddenTimestamp');
-            }
-        };
-
-        checkLockStatus(); // Check on initial load
-
-        const handleVisibilityChange = () => {
-            const pin = localStorage.getItem('appLockPin');
-            if (!pin) return;
-
-            if (document.hidden) {
-                localStorage.setItem('appHiddenTimestamp', String(Date.now()));
-            } else {
-                checkLockStatus();
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
-            if (currentUser) {
-                if (currentUser.isAnonymous) {
-                    let profileUpdated = false;
-                    const savedProfileJSON = localStorage.getItem('guestProfile');
-        
-                    if (savedProfileJSON) {
-                        try {
-                            const savedProfile = JSON.parse(savedProfileJSON);
-                            if (currentUser.displayName !== savedProfile.displayName || currentUser.photoURL !== savedProfile.photoURL) {
-                                await currentUser.updateProfile({
-                                    displayName: savedProfile.displayName,
-                                    photoURL: savedProfile.photoURL,
-                                });
-                                await db.collection('users').doc(currentUser.uid).set({
-                                    displayName: savedProfile.displayName,
-                                    photoURL: savedProfile.photoURL,
-                                    isAnonymous: true,
-                                }, { merge: true });
-                                profileUpdated = true;
-                            }
-                        } catch (e) {
-                            console.error("Error parsing guest profile from localStorage:", e);
-                            localStorage.removeItem('guestProfile'); // Clear corrupted data
-                        }
-                    } else if (!currentUser.displayName) {
-                        // Generate a new guest name without a DB transaction to avoid quota issues.
-                        const guestNumber = Math.floor(10 + Math.random() * 9990); // 2-4 digit random number
-                        const newGuestName = `زائر ${guestNumber}`;
-                        try {
-                            await currentUser.updateProfile({ displayName: newGuestName });
-                            await db.collection('users').doc(currentUser.uid).set({
-                                displayName: newGuestName,
-                                photoURL: null,
-                                isAnonymous: true,
-                                isAdmin: false,
-                                isMuted: false,
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                            });
-                            // Save the new profile to localStorage for persistence
-                            localStorage.setItem('guestProfile', JSON.stringify({ displayName: newGuestName, photoURL: null }));
-                            profileUpdated = true;
-                        } catch (e) {
-                            console.error("Error setting up new guest profile:", e);
-                            // Fallback in case of error
-                            await currentUser.updateProfile({ displayName: 'زائر' });
-                            profileUpdated = true;
-                        }
-                    }
-                    
-                    if (profileUpdated) {
-                        await currentUser.reload();
-                        setUser(auth.currentUser);
-                    } else {
-                        setUser(currentUser);
-                    }
-                } else {
-                    localStorage.removeItem('guestProfile');
-                    setUser(currentUser);
-                }
-            } else {
-                setUser(null);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            if (!currentUser) {
+                // If user signs out, ensure they are not locked out of the login screen
+                setIsLocked(false); 
+                localStorage.removeItem('appLockPin');
+                setView('main');
             }
             setLoading(false);
         });
 
-        return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            unsubscribe();
-        };
+        return () => unsubscribe();
     }, []);
 
     const handleGuestLogin = async () => {
-        setLoading(true);
         try {
-            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
             await auth.signInAnonymously();
-        } catch (error) {
-            console.error("Error signing in as guest:", error);
-            setLoading(false);
+        } catch (error: any) {
+            showAlert(getFirebaseErrorMessage(error.code));
         }
     };
 
-    const renderAuthViews = () => {
-        switch (view) {
-            case 'login':
-                return <LoginView setView={setView} />;
-            case 'signup':
-                return <SignupView setView={setView} />;
-            case 'forgot-password':
-                return <ForgotPasswordView setView={setView} />;
-            default:
-                return <MainView setView={setView} handleGuestLogin={handleGuestLogin} />;
-        }
+    const showAlert = (message: string, type: 'error' | 'success' = 'error') => {
+        setAlert({ message, type });
     };
-    
+
     if (loading) {
         return (
-            <main 
-                className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
-                style={{ backgroundImage: "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop')" }}
-            >
-                <div className="text-center text-white text-2xl">
-                    جارِ التحميل...
-                </div>
-            </main>
+            <div className="min-h-screen flex items-center justify-center bg-sky-950">
+                <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-sky-400"></div>
+            </div>
         );
     }
 
-    if (user && isLocked) {
+    if (isLocked) {
         return <LockScreen onUnlock={() => setIsLocked(false)} />;
     }
+    
+    const renderView = () => {
+        if (!user) {
+            switch (view) {
+                case 'login':
+                    return <LoginView setView={setView} />;
+                case 'signup':
+                    return <SignupView setView={setView} />;
+                case 'forgot-password':
+                    return <ForgotPasswordView setView={setView} />;
+                default:
+                    return <MainView setView={setView} handleGuestLogin={handleGuestLogin} />;
+            }
+        }
+        return <LoggedInLayout user={user} showAlert={showAlert} />;
+    };
 
     return (
-        <main 
-            className="min-h-screen bg-cover bg-center bg-fixed"
-            style={{ 
-                backgroundImage: "url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop')",
-                backgroundColor: '#0c4a6e'
-            }}
-        >
-             {alertInfo && <CustomAlert message={alertInfo.message} type={alertInfo.type} onClose={() => setAlertInfo(null)} />}
-            <div className="min-h-screen bg-sky-900/50">
-                {user ? (
-                    <LoggedInLayout user={user} showAlert={showAlert} />
-                ) : (
-                    <div className="flex items-center justify-center min-h-screen p-4">
-                        <div className="w-full max-w-md bg-sky-950/80 rounded-2xl shadow-xl p-8 space-y-8 relative backdrop-blur-xl border border-sky-300/30">
-                            <div className="relative z-10">
-                                {renderAuthViews()}
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </main>
+        <>
+            <main 
+                className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
+                style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=2070&auto=format&fit=crop')" }}
+            >
+                <div className="w-full max-w-md">
+                    {renderView()}
+                </div>
+            </main>
+            {alert && <CustomAlert message={alert.message} type={alert.type} onClose={() => setAlert(null)} />}
+        </>
     );
 };
 
