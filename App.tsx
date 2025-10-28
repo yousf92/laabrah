@@ -1,22 +1,14 @@
 
-
-
+// FIX: Correctly import React hooks and replace 'aistate' with 'useState'.
 import React, { useState, useEffect, useRef } from 'react';
 // FIX: Use Firebase v9 compat libraries to support v8 syntax, resolving property and type errors.
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import 'firebase/compat/firestore'; // Added Firestore
 import { 
-    // getAuth, // v9
-    // createUserWithEmailAndPassword, // v9
-    // signInWithEmailAndPassword, // v9
-    // sendPasswordResetEmail, // v9
-    onAuthStateChanged, // v9
-    // signOut, // v9
-    // updateProfile, // v9
-    // sendEmailVerification, // v9
-    // User // v9
+    onAuthStateChanged,
 } from 'firebase/auth';
+import { GoogleGenAI, Chat } from "@google/genai";
 
 // --- Global Declarations ---
 declare const uploadcare: any; // To inform TypeScript about the global uploadcare object
@@ -55,6 +47,7 @@ interface UserProfile {
     email?: string;
     isAdmin?: boolean;
     isMuted?: boolean;
+    commitmentDocument?: string;
 }
 
 interface Conversation extends Omit<UserProfile, 'uid'> {
@@ -90,34 +83,6 @@ interface PinnedMessage {
     uid: string;
     displayName: string;
 }
-
-interface Group {
-    id: string;
-    name: string;
-    description: string;
-    photoURL: string | null;
-    ownerUid: string;
-    createdAt: firebase.firestore.Timestamp;
-    memberUids: string[]; // For querying
-    pinnedMessage?: PinnedMessage;
-}
-
-type GroupMemberRole = 'owner' | 'admin' | 'member';
-
-interface GroupMember {
-    uid: string;
-    displayName: string;
-    photoURL: string | null;
-    role: GroupMemberRole;
-}
-
-interface JoinRequest {
-    id: string; // Document ID is the user UID
-    displayName: string;
-    photoURL: string | null;
-    timestamp: firebase.firestore.Timestamp;
-}
-
 
 interface ViewProps {
     setView: React.Dispatch<React.SetStateAction<View>>;
@@ -177,6 +142,13 @@ const getArabicUnitLabel = (count: number, unit: 'month' | 'day' | 'hour' | 'min
 
 
 // --- SVG Icons ---
+const FireIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
+        <path fillRule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071 1.071L12 4.429l-1.106 1.107a.75.75 0 001.07 1.071L12 6.57l1.107-1.106a.75.75 0 00-1.072-1.071L12 4.429 10.894 3.322a.75.75 0 00-1.07 1.071L12 6.57l1.106 1.107a.75.75 0 001.071-1.07L12 6.57l1.106-1.107a.75.75 0 00-1.07-1.071L12 4.429 12.963 2.286zM8.39 8.25a.75.75 0 00-1.07 1.07l1.106 1.106a.75.75 0 001.07-1.07L8.39 8.25zM12 12.75a.75.75 0 00-.75.75v3.75a.75.75 0 001.5 0V13.5a.75.75 0 00-.75-.75zM15.61 8.25a.75.75 0 00-1.07-1.07L13.434 8.25a.75.75 0 001.07 1.07l1.106-1.106z" clipRule="evenodd" />
+        <path d="M10.152 16.354a.75.75 0 01-1.06 1.06l-2.01-2.011a3 3 0 01-1.252-2.122 3 3 0 011.396-2.628l2.929-1.709a.75.75 0 011.23.838l-.94 2.057a.75.75 0 01-1.353-.62l.711-1.545-2.071 1.2a1.5 1.5 0 00-.698 1.314 1.5 1.5 0 00.626 1.06l1.458 1.458zM16.5 18c.95 0 1.848-.394 2.5-1.088l-1.026-1.026a.75.75 0 011.06-1.06l1.027 1.026c.42-.803.54-1.738.332-2.652a.75.75 0 01-1.482.223 2.769 2.769 0 00-.312 1.405 2.75 2.75 0 00-2.094 2.162.75.75 0 01-1.472-.294 4.25 4.25 0 013.998-3.998.75.75 0 01.294 1.472A2.75 2.75 0 0016.5 18z" />
+    </svg>
+);
+
 const EnvelopeIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
@@ -379,12 +351,6 @@ const ReplyIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
-const UsersIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m-7.5-2.952A3 3 0 0010.5 12A3 3 0 008 14.25m8.94-4.286a3 3 0 00-4.286-4.286A3 3 0 0010.5 12a3 3 0 00-2.25 5.25m5-10.5V6a3 3 0 00-3-3H6a3 3 0 00-3 3v12a3 3 0 003 3h5.25" />
-    </svg>
-);
-
 const ArrowUpCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 11.25l-3-3m0 0l-3 3m3-3v7.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -400,6 +366,27 @@ const ArrowDownCircleIcon: React.FC<{ className?: string }> = ({ className }) =>
 const ArrowLeftOnRectangleIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+    </svg>
+);
+
+const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+);
+
+const BookOpenIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+    </svg>
+);
+
+const SealIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" className={className} fill="currentColor">
+      <path d="M50 5c24.85 0 45 20.15 45 45s-20.15 45-45 45S5 74.85 5 50 25.15 5 50 5zm-3.5 1.5c-2.3.4-4.5 1-6.6 1.8-11.4 4.5-19.4 15.3-20.7 27.6-.3 2.7-.3 5.5 0 8.2 2 17.8 15.7 31.5 33.5 33.5 2.7.3 5.5.3 8.2 0 17.8-2 31.5-15.7 33.5-33.5.3-2.7.3-5.5 0-8.2-1.3-12.3-9.3-23.1-20.7-27.6-2.1-.8-4.3-1.4-6.6-1.8-1.1-.2-2.3-.2-3.4 0z" opacity=".5"/>
+      <path d="M50 10c22.09 0 40 17.91 40 40s-17.91 40-40 40S10 72.09 10 50 27.91 10 50 10zm-2.9 1.2c-1.9.3-3.8.8-5.6 1.5C29.2 17.2 20.8 27 19.3 38.9c-.3 2.3-.3 4.6 0 6.9 1.7 15 13.2 26.5 28.2 28.2 2.3.3 4.6.3 6.9 0 15-1.7 26.5-13.2 28.2-28.2.3-2.3.3-4.6 0-6.9-1.5-11.9-9.9-21.7-22.2-26.2-1.8-.7-3.7-1.2-5.6-1.5-.9-.2-1.9-.2-2.8 0z" opacity=".7"/>
+      <path d="M50 15c19.33 0 35 15.67 35 35s-15.67 35-35 35S15 69.33 15 50 30.67 15 50 15z"/>
+      <path fill="#fff" d="M50 26.25l5.87 11.89 13.13 1.91-9.5 9.26 2.24 13.08L50 56.63l-11.74 6.17 2.24-13.08-9.5-9.26 13.13-1.91z"/>
     </svg>
 );
 
@@ -568,6 +555,7 @@ const SignupView: React.FC<ViewProps> = ({ setView }) => {
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     isAdmin: false,
                     isMuted: false,
+                    commitmentDocument: '',
                 });
             }
             setSubmitted(true);
@@ -767,6 +755,630 @@ const ForgotPasswordView: React.FC<ViewProps> = ({ setView }) => {
     );
 };
 
+// --- Najda (Help) Feature ---
+const NajdaFeature: React.FC = () => {
+    type NajdaView = 'home' | 'breathing' | 'advice';
+    const [view, setView] = useState<NajdaView>('home');
+    const [breathingText, setBreathingText] = useState('استعد...');
+    const [countdown, setCountdown] = useState(57);
+    const [advice, setAdvice] = useState('');
+    const [adviceLoading, setAdviceLoading] = useState(false);
+
+    // Refs for API key rotation
+    const apiKeysRef = useRef<string[]>([]);
+    const currentKeyIndexRef = useRef(0);
+
+    // Effect for the 57s countdown and transitioning to advice view
+    useEffect(() => {
+        if (view !== 'breathing') return;
+
+        setCountdown(57); // Reset countdown on view change
+        const timer = setInterval(() => {
+            setCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    setView('advice');
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [view]);
+
+    // Effect for the breathing text cycle (19 seconds)
+    useEffect(() => {
+        if (view !== 'breathing') return;
+
+        setBreathingText('شهيق'); // Inhale
+        const t1 = setTimeout(() => setBreathingText('حبس النفس'), 4000); // Hold
+        const t2 = setTimeout(() => setBreathingText('زفير'), 11000); // Exhale (4+7)
+        
+        const interval = setInterval(() => {
+            setBreathingText('شهيق');
+            setTimeout(() => setBreathingText('حبس النفس'), 4000);
+            setTimeout(() => setBreathingText('زفير'), 11000);
+        }, 19000);
+
+        return () => {
+            clearTimeout(t1);
+            clearTimeout(t2);
+            clearInterval(interval);
+        };
+    }, [view]);
+
+    // Effect for fetching the advice from Gemini
+    useEffect(() => {
+        if (view !== 'advice') return;
+
+        const fetchAdvice = async () => {
+            setAdviceLoading(true);
+            setAdvice('');
+
+            if (apiKeysRef.current.length === 0) {
+                 apiKeysRef.current = (process.env.API_KEY || '')
+                    .split(',')
+                    .map(k => k.trim())
+                    .filter(Boolean);
+            }
+        
+            if (apiKeysRef.current.length === 0) {
+                console.error("Gemini API key not found in process.env.API_KEY");
+                setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
+                setAdviceLoading(false);
+                return;
+            }
+            
+            const prompt = "كلمني";
+            const systemInstruction = "بصفتك ناصح أمين على منهج السلف الصالح خاطب شخص على وشك يطيح في معصية العادة السرية أو مشاهدة الإباحية عطه كلام قوي ومباشر يجمع بين العقل والترهيب والتذكير بعواقب الفعل عشان يتراجع فورا تكلم باللهجة السعودية العامية وردك لازم يكون بدون تشكيل وبدون أي علامات ترقيم نهائيا وخليه قصير ومختصر وطبيعي كأنك تكلم خوي";
+            let success = false;
+            const totalKeys = apiKeysRef.current.length;
+
+            for (let i = 0; i < totalKeys; i++) {
+                const keyIndex = (currentKeyIndexRef.current + i) % totalKeys;
+                const apiKey = apiKeysRef.current[keyIndex];
+
+                try {
+                    const ai = new GoogleGenAI({ apiKey });
+                    const response = await ai.models.generateContent({
+                        model: 'gemini-2.5-flash',
+                        contents: prompt,
+                        config: { systemInstruction }
+                    });
+
+                    setAdvice(response.text);
+                    currentKeyIndexRef.current = keyIndex;
+                    success = true;
+                    break; 
+
+                } catch (error: any) {
+                    console.error(`Gemini API error with key index ${keyIndex}:`, error);
+                    const isQuotaError = error.toString().includes('429');
+                    if (isQuotaError) {
+                        console.warn(`Key index ${keyIndex} has reached its quota. Trying next key.`);
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            
+            if (!success) {
+                setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
+            }
+
+            setAdviceLoading(false);
+        };
+        
+        fetchAdvice();
+    }, [view]);
+
+    const handleClose = () => {
+        setView('home');
+        setAdvice('');
+        setAdviceLoading(false);
+    };
+
+    if (view === 'home') {
+        return (
+            <div className="mt-8 max-w-sm mx-auto">
+                <button
+                    onClick={() => setView('breathing')}
+                    className="w-full flex items-center justify-center gap-3 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-orange-500 to-red-700 hover:from-orange-400 hover:to-red-600 hover:shadow-xl hover:shadow-red-500/30 hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-red-400"
+                >
+                    <FireIcon className="w-6 h-6 animate-flicker" />
+                    <span>النجدة!</span>
+                </button>
+            </div>
+        );
+    }
+    
+    // The Modal part
+    return (
+        <div className="fixed inset-0 bg-sky-950/90 backdrop-blur-lg flex flex-col items-center justify-center z-50 p-4 text-white text-center">
+            {view === 'breathing' && (
+                <>
+                    <div className="relative w-64 h-64 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-sky-400/20 rounded-full breathing-circle"></div>
+                        <div className="relative z-10">
+                            <h2 className="text-4xl font-bold text-shadow">{breathingText}</h2>
+                        </div>
+                    </div>
+                    <p className="mt-8 text-6xl font-mono font-bold text-shadow">{countdown}</p>
+                </>
+            )}
+
+            {view === 'advice' && (
+                <div className="max-w-md flex flex-col items-center">
+                    {adviceLoading ? (
+                         <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
+                    ) : (
+                        <>
+                            <p className="text-2xl font-semibold leading-relaxed text-shadow mb-2">"</p>
+                            <p className="text-2xl font-semibold leading-relaxed text-shadow">{advice}</p>
+                            <p className="text-2xl font-semibold leading-relaxed text-shadow mt-2">"</p>
+                        </>
+                    )}
+                </div>
+            )}
+            
+            <button
+                onClick={handleClose}
+                className="absolute bottom-10 left-1/2 -translate-x-1/2 px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500"
+            >
+                إغلاق
+            </button>
+        </div>
+    );
+};
+
+// --- Desire Solver Feature ---
+const DesireSolverFeature: React.FC = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [chat, setChat] = useState<Chat | null>(null);
+    const [currentResponse, setCurrentResponse] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+    
+    const apiKeysRef = useRef<string[]>([]);
+    const currentKeyIndexRef = useRef(0);
+
+    const initializeApiKeys = () => {
+        if (apiKeysRef.current.length === 0) {
+             apiKeysRef.current = (process.env.API_KEY || '')
+                .split(',')
+                .map(k => k.trim())
+                .filter(Boolean);
+        }
+    };
+
+    const getNewSolution = async (isFirstRequest = false) => {
+        setIsLoading(true);
+        setError('');
+        setCurrentResponse('');
+        initializeApiKeys();
+
+        if (apiKeysRef.current.length === 0) {
+            console.error("Gemini API key not found in process.env.API_KEY");
+            setError('حدث خطأ في الاتصال، يرجى المحاولة مرة أخرى.');
+            setIsLoading(false);
+            return;
+        }
+
+        const systemInstruction = "بصفتك ناصح أمين وفاهم على منهج السلف الصالح خاطب شخص على وشك يطيح في معصية العادة السرية أو مشاهدة الإباحية عطه كلام قوي ومباشر يجمع بين العقل والترهيب والتذكير بعواقب الفعل عشان يتراجع فورا تكلم باللهجة السعودية العامية وكأنك تسولف مع خويك في أزمة لا تكلمني كأنك آلة أو خطيب.. لا تستخدم أي تشكيل أو علامات ترقيم نهائيا لا فاصلة ولا نقطة ولا شي.. عطني كلام طويل ومفصل وخش في صلب الموضوع على طول.. الأهم من هذا كله (شرط أساسي): التنوع الكامل وعدم التكرار. كل مرة أقول لك 'أبغى حل ثاني' لازم تعطيني حل جديد ومختلف تماما عن כל الحلول اللي عطيتني إياها قبل. لا تعيد صياغة نفس الفكرة ولا تكرر أي نصيحة. إذا حسيت إنك بتكرر وقف وقول لي ما عندي شي جديد. لازم כל حل يكون فكرة مستقلة وجديدة.";
+        const initialPrompt = "اسمع يا صاحبي أنا فيني بلا وأحس إني على وشك أطيح في مشاهدة المقاطع الإباحية والرغبة قوية مرة أبغاك بصفتك ناصح أمين وفاهم على منهج السلف الصالح تعطيني حل عملي وفوري أقدر أسويه الحين عشان أطفي هذي النار";
+        const followUpPrompt = "أبغى حل ثاني";
+        
+        let localChat = chat;
+        let success = false;
+        
+        for (let i = 0; i < apiKeysRef.current.length; i++) {
+            const keyIndex = (currentKeyIndexRef.current + i) % apiKeysRef.current.length;
+            const apiKey = apiKeysRef.current[keyIndex];
+
+            try {
+                const ai = new GoogleGenAI({ apiKey });
+
+                if (!localChat) {
+                    const newChat = ai.chats.create({
+                        model: 'gemini-2.5-flash',
+                        config: { 
+                            systemInstruction,
+                            maxOutputTokens: 8192,
+                            thinkingConfig: { thinkingBudget: 1024 },
+                        },
+                    });
+                    setChat(newChat);
+                    localChat = newChat;
+                }
+
+                const prompt = isFirstRequest ? initialPrompt : followUpPrompt;
+                const response = await localChat.sendMessage({ message: prompt });
+                
+                setCurrentResponse(response.text);
+                currentKeyIndexRef.current = keyIndex;
+                success = true;
+                break;
+
+            } catch (err: any) {
+                console.error(`Gemini API error with key index ${keyIndex}:`, err);
+                const isQuotaError = err.toString().includes('429');
+                if (isQuotaError) {
+                    console.warn(`Key index ${keyIndex} has reached its quota. Trying next key.`);
+                    setChat(null); // Reset chat session if key fails
+                    localChat = null;
+                    continue;
+                } else {
+                    setError('حدث خطأ غير متوقع، يرجى المحاولة لاحقاً.');
+                    break;
+                }
+            }
+        }
+        
+        if (!success && !error) {
+            setError('فشلت جميع محاولات الاتصال، حاول مرة أخرى.');
+        }
+
+        setIsLoading(false);
+    };
+    
+    const handleOpen = () => {
+        setIsOpen(true);
+        getNewSolution(true);
+    };
+
+    const handleClose = () => {
+        setIsOpen(false);
+        setChat(null);
+        setCurrentResponse('');
+        setError('');
+    };
+
+    if (!isOpen) {
+        return (
+            <div className="mt-8 max-w-sm mx-auto">
+                <button
+                    onClick={handleOpen}
+                    className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-indigo-500 to-purple-700 hover:from-indigo-400 hover:to-purple-600 hover:shadow-xl hover:shadow-purple-500/30 hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-purple-400"
+                >
+                    <span>عندي رغبة شديدة، اعطني حلاً</span>
+                </button>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="fixed inset-0 bg-sky-950/90 backdrop-blur-lg flex flex-col items-center justify-center z-50 p-4 text-white text-center">
+            <div className="max-w-md w-full flex-grow flex flex-col items-center justify-start overflow-y-auto py-4 min-h-0">
+                {isLoading && (
+                    <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
+                )}
+                {error && <ErrorMessage message={error} />}
+                {!isLoading && currentResponse && (
+                     <p className="text-xl font-semibold leading-relaxed text-shadow">{currentResponse}</p>
+                )}
+            </div>
+            
+            <div className="w-full max-w-sm flex flex-col gap-4 pb-10 flex-shrink-0">
+                 {!isLoading && (
+                    <button
+                        onClick={() => getNewSolution(false)}
+                        className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500"
+                    >
+                        أبغى حل ثاني
+                    </button>
+                 )}
+                 <button
+                    onClick={handleClose}
+                    className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500"
+                >
+                    إغلاق
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// --- Faith Dose Feature ---
+const FaithDoseFeature: React.FC = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [chat, setChat] = useState<Chat | null>(null);
+    const [currentStory, setCurrentStory] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+    
+    const apiKeysRef = useRef<string[]>([]);
+    const currentKeyIndexRef = useRef(0);
+
+    const initializeApiKeys = () => {
+        if (apiKeysRef.current.length === 0) {
+             apiKeysRef.current = (process.env.API_KEY || '')
+                .split(',')
+                .map(k => k.trim())
+                .filter(Boolean);
+        }
+    };
+
+    const getNewStory = async (isFirstRequest = false) => {
+        setIsLoading(true);
+        setError('');
+        setCurrentStory('');
+        initializeApiKeys();
+
+        if (apiKeysRef.current.length === 0) {
+            console.error("Gemini API key not found in process.env.API_KEY");
+            setError('حدث خطأ في الاتصال، يرجى المحاولة مرة أخرى.');
+            setIsLoading(false);
+            return;
+        }
+
+        const systemInstruction = "بصفتك ناصح امين وفاهم على منهج السلف الصالح اسمع يا صاحبي أبغاك تسولف لي سالفة عن واحد من الصالحين وكيف كان خوفه من الله وتقواه وكيف كان يجاهد نفسه عشان يترك المعاصي وكيف لقى لذة الإيمان الحقيقية واربط لي هالكلام بموضوع التعافي من الإدمان وكيف إن لذة الطاعة أحلى وأبقى من لذة المعصية الزايلة. الشخصيات: لا تجيب لي سيرة الخلفاء الراشدين الأربعة (أبو بكر وعمر وعثمان وعلي) لأني أعرف قصصهم. أبغاك تجيب لي قصص عشوائية وجديدة كل مرة من حياة التابعين وتابعي التابعين والعلماء والصالحين والعباد والزهاد من כל العصور. يعني كل مرة أطلب منك عطني قصة لشخصية مختلفة تماما ولا تكرر لي نفس الشخصية أبدا. المنهج: لا تطلع عن منهج السلف الصالح في طريقة سردك للقصص والمعلومات.. اللهجة: تكلم باللهجة السعودية العامية وخلك طبيعي كأنك تسولف مع خويك في استراحة.. التنسيق: لا تستخدم أي علامات ترقيم (لا فاصلة ولا نقطة) ولا أي تشكيل (فتحة ضمة كسرة) نهائيا.. الطول: عطني كلام طويل ومفصل وسولف من قلبك. ركز معي زين: كل قصة لازم تبدأ بذكر اسم صاحبها بوضوح. مثلا تقول 'بأسولف لك عن فلان...' وبعدها تبدأ القصة من أولها مو من نصها. هذا شرط أساسي ومهم جدا. أكرر مرة ثانية: بداية ردك لازم تكون بالصيغة هذي 'اسمع سالفة فلان بن فلان' وبعدها تبدأ القصة مباشرة بدون أي مقدمات ثانية.";
+        const initialPrompt = "عطني اول قصة";
+        const followUpPrompt = "أبغى قصة ثانية";
+        
+        let localChat = chat;
+        let success = false;
+        
+        for (let i = 0; i < apiKeysRef.current.length; i++) {
+            const keyIndex = (currentKeyIndexRef.current + i) % apiKeysRef.current.length;
+            const apiKey = apiKeysRef.current[keyIndex];
+
+            try {
+                const ai = new GoogleGenAI({ apiKey });
+
+                if (!localChat) {
+                    const newChat = ai.chats.create({
+                        model: 'gemini-2.5-flash',
+                        config: { 
+                            systemInstruction,
+                            maxOutputTokens: 8192,
+                            thinkingConfig: { thinkingBudget: 1024 },
+                        },
+                    });
+                    setChat(newChat);
+                    localChat = newChat;
+                }
+
+                const prompt = isFirstRequest ? initialPrompt : followUpPrompt;
+                const response = await localChat.sendMessage({ message: prompt });
+                
+                setCurrentStory(response.text);
+                currentKeyIndexRef.current = keyIndex;
+                success = true;
+                break;
+
+            } catch (err: any) {
+                console.error(`Gemini API error with key index ${keyIndex}:`, err);
+                const isQuotaError = err.toString().includes('429');
+                if (isQuotaError) {
+                    console.warn(`Key index ${keyIndex} has reached its quota. Trying next key.`);
+                    setChat(null); 
+                    localChat = null;
+                    continue;
+                } else {
+                    setError('حدث خطأ غير متوقع، يرجى المحاولة لاحقاً.');
+                    break;
+                }
+            }
+        }
+        
+        if (!success && !error) {
+            setError('فشلت جميع محاولات الاتصال، حاول مرة أخرى.');
+        }
+
+        setIsLoading(false);
+    };
+    
+    const handleOpen = () => {
+        setIsOpen(true);
+        getNewStory(true);
+    };
+
+    const handleClose = () => {
+        setIsOpen(false);
+        setChat(null);
+        setCurrentStory('');
+        setError('');
+    };
+
+    if (!isOpen) {
+        return (
+            <div className="mt-8 max-w-sm mx-auto">
+                <button
+                    onClick={handleOpen}
+                    className="w-full flex items-center justify-center gap-3 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-green-500 to-teal-700 hover:from-green-400 hover:to-teal-600 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-teal-400"
+                >
+                    <BookOpenIcon className="w-6 h-6" />
+                    <span>عطني جرعة ايمانية من قصص السلف</span>
+                </button>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="fixed inset-0 bg-sky-950/90 backdrop-blur-lg flex flex-col items-center justify-center z-50 p-4 text-white text-center">
+            <div className="max-w-md w-full flex-grow flex flex-col items-center justify-start overflow-y-auto py-4 min-h-0">
+                {isLoading && (
+                    <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
+                )}
+                {error && <ErrorMessage message={error} />}
+                {!isLoading && currentStory && (
+                     <p className="text-xl font-semibold leading-relaxed text-shadow">{currentStory}</p>
+                )}
+            </div>
+            
+            <div className="w-full max-w-sm flex flex-col gap-4 pb-10 flex-shrink-0">
+                 {!isLoading && (
+                    <button
+                        onClick={() => getNewStory(false)}
+                        className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500"
+                    >
+                        أبغى قصة ثانية
+                    </button>
+                 )}
+                 <button
+                    onClick={handleClose}
+                    className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500"
+                >
+                    إغلاق
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// --- Commitment Document Feature ---
+const CommitmentDocumentFeature: React.FC<{ user: firebase.User; initialText?: string }> = ({ user, initialText }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [documentText, setDocumentText] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState('');
+    const hasSavedContent = useRef(!!initialText);
+
+    useEffect(() => {
+        setDocumentText(initialText || '');
+        hasSavedContent.current = !!initialText;
+    }, [initialText]);
+
+    useEffect(() => {
+        if (isOpen && !hasSavedContent.current) {
+            setIsEditing(true);
+        }
+    }, [isOpen]);
+
+    const handleOpen = () => setIsOpen(true);
+    const handleClose = () => {
+        setIsOpen(false);
+        setIsEditing(false);
+        // Reset text to the last saved state if the user cancels
+        setDocumentText(initialText || '');
+        setMessage(''); // Clear any messages
+    };
+    
+    const handleEdit = () => {
+        setIsEditing(true);
+        setMessage(''); // Clear message when going into edit mode
+    };
+
+    const handleSave = async () => {
+        setLoading(true);
+        setMessage('');
+        try {
+            await db.collection('users').doc(user.uid).set({
+                commitmentDocument: documentText
+            }, { merge: true });
+            setMessage('تم الحفظ بنجاح!');
+            hasSavedContent.current = true; // Mark that there's saved content now
+            setIsEditing(false);
+            setTimeout(() => setMessage(''), 3000);
+        } catch (error) {
+            console.error("Error saving commitment document:", error);
+            setMessage('حدث خطأ أثناء الحفظ.');
+             setTimeout(() => setMessage(''), 3000);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    if (!isOpen) {
+        return (
+             <div className="mt-8 max-w-sm mx-auto">
+                <button
+                    onClick={handleOpen}
+                    className="w-full flex items-center justify-center gap-3 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-slate-500 to-slate-700 hover:from-slate-400 hover:to-slate-600 hover:shadow-xl hover:shadow-slate-500/30 hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-slate-400"
+                >
+                    <BookOpenIcon className="w-6 h-6" />
+                    <span>وثيقة الالتزام</span>
+                </button>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="fixed inset-0 bg-sky-950/90 backdrop-blur-lg flex flex-col items-center justify-center z-50 p-4 text-white">
+            <div className="w-full max-w-md h-full flex flex-col">
+                <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-sky-200 text-shadow">وثيقة الالتزام</h2>
+                    <button onClick={handleClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                        <XMarkIcon className="w-6 h-6"/>
+                    </button>
+                </header>
+                
+                <main className="flex-grow overflow-y-auto p-6 space-y-4">
+                    {isEditing ? (
+                        <>
+                            <p className="text-sm text-sky-200">
+                                اكتب هنا حالتك ومشاعرك الآن... لماذا تريد أن تترك؟ ما هو شعورك السيء؟ اجعلها رسالة لنفسك في المستقبل كلما فكرت في العودة.
+                            </p>
+                            <textarea
+                                value={documentText}
+                                onChange={(e) => setDocumentText(e.target.value)}
+                                placeholder="أنا ألتزم بترك هذا الفعل لأن..."
+                                className="w-full h-64 bg-slate-800/60 border border-slate-700 rounded-lg p-3 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 transition resize-none"
+                            />
+                        </>
+                    ) : (
+                        <div className="bg-gradient-to-br from-[#fdf6e3] to-[#f7f0d8] text-[#5a4635] p-6 rounded-lg shadow-2xl border-4 border-double border-[#d4b996] relative min-h-[20rem] flex flex-col justify-between font-amiri">
+                            <div className="text-center">
+                                <h3 className="text-4xl font-bold text-[#8c7862] tracking-wide">وثيقة الالتزام</h3>
+                                <div className="w-2/3 h-px bg-[#d4b996] mx-auto my-4"></div>
+                            </div>
+                            
+                            <p className="text-lg whitespace-pre-wrap break-words leading-loose text-center my-4 flex-grow">
+                                {documentText}
+                            </p>
+                        
+                            <div className="mt-auto pt-4 text-center">
+                                <p className="text-2xl font-bold tracking-wider">{user.displayName}</p>
+                                <div className="w-1/2 h-px bg-[#d4b996] mx-auto mt-1"></div>
+                                <p className="text-sm text-[#8c7862]">التوقيع</p>
+                            </div>
+                        
+                            <div className="absolute bottom-4 left-4">
+                                <SealIcon className="w-16 h-16 text-[#b93c3c]" />
+                            </div>
+                        </div>
+                    )}
+                    {message && <p className={`text-center text-sm ${message.includes('خطأ') ? 'text-red-400' : 'text-green-300'}`}>{message}</p>}
+                </main>
+                
+                <footer className="w-full flex flex-col gap-4 p-4 flex-shrink-0">
+                    {isEditing ? (
+                        <div className="flex gap-4">
+                            {hasSavedContent.current && 
+                                <button
+                                    onClick={() => setIsEditing(false)}
+                                    className="w-1/2 px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500"
+                                >
+                                    إلغاء
+                                </button>
+                            }
+                            <button
+                                onClick={handleSave}
+                                disabled={loading}
+                                className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-teal-500 to-teal-700 hover:from-teal-400 hover:to-teal-600 hover:shadow-xl hover:shadow-teal-500/30 hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-teal-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {loading ? 'جارِ الحفظ...' : 'حفظ الوثيقة'}
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={handleEdit}
+                            className="w-full flex items-center justify-center gap-3 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-sky-400"
+                        >
+                            <PencilIcon className="w-5 h-5" />
+                            <span>تعديل</span>
+                        </button>
+                    )}
+                </footer>
+            </div>
+        </div>
+    );
+};
+
+
 // --- Home View (for logged-in users) ---
 interface TimeDifference {
     months: number;
@@ -830,7 +1442,8 @@ const HomeView: React.FC<{
     setShowNotifications: (show: boolean) => void;
     setShowChat: (show: boolean) => void;
     hasUnreadPrivateMessages: boolean;
-}> = ({ user, setActiveTab, startDate, handleStartCounter, counterImage, setShowNotifications, setShowChat, hasUnreadPrivateMessages }) => {
+    currentUserProfile: UserProfile | null;
+}> = ({ user, setActiveTab, startDate, handleStartCounter, counterImage, setShowNotifications, setShowChat, hasUnreadPrivateMessages, currentUserProfile }) => {
     const [now, setNow] = useState(() => new Date());
     const animationFrameId = useRef<number>();
 
@@ -914,6 +1527,11 @@ const HomeView: React.FC<{
                     </div>
                 </main>
 
+                <NajdaFeature />
+                <DesireSolverFeature />
+                <FaithDoseFeature />
+                <CommitmentDocumentFeature user={user} initialText={currentUserProfile?.commitmentDocument} />
+
                 <div className="mt-8 max-w-sm mx-auto">
                     <button 
                         onClick={handleStartCounter}
@@ -968,6 +1586,10 @@ const HomeView: React.FC<{
                    </div>
                 </div>
             </main>
+            <NajdaFeature />
+            <DesireSolverFeature />
+            <FaithDoseFeature />
+            <CommitmentDocumentFeature user={user} initialText={currentUserProfile?.commitmentDocument} />
         </div>
     );
 };
@@ -1721,6 +2343,8 @@ const NotificationsModal: React.FC<{
     );
 };
 
+// --- Chat Components (continued) ---
+
 // --- Chat Component ---
 const MessageActionModal: React.FC<{
     onClose: () => void;
@@ -1965,7 +2589,6 @@ const ChatModal: React.FC<{
     currentUserProfile: UserProfile | null;
     blockedUsers: string[];
     onStartPrivateChat: (user: UserProfile) => void;
-    onOpenGroupChat: (group: Group) => void;
     onBlockUser: (user: UserProfile) => void;
     onUnblockUser: (uid: string) => void;
     hasUnreadPrivateMessages: boolean;
@@ -1976,7 +2599,7 @@ const ChatModal: React.FC<{
     handleDeleteMessage: (id: string) => void;
     showAlert: (message: string, type?: 'error' | 'success') => void;
     isDeveloper: boolean;
-}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onOpenGroupChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage, showAlert, isDeveloper }) => {
+}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage, showAlert, isDeveloper }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
@@ -1993,7 +2616,7 @@ const ChatModal: React.FC<{
     const reactionMenuRef = useRef<HTMLDivElement>(null);
     
     const [userForAction, setUserForAction] = useState<UserProfile | null>(null);
-    const [activeTab, setActiveTab] = useState<'public' | 'private' | 'groups'>('public');
+    const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
 
     const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
     const [pinnedMessage, setPinnedMessage] = useState<PinnedMessage | null>(null);
@@ -2184,56 +2807,39 @@ const ChatModal: React.FC<{
         setMessageForAction(null);
     };
 
-    // --- FIX START: Wrapper functions for admin actions to ensure real-time UI updates ---
     const wrappedOnToggleAdmin = async () => {
         if (!userForAction) return;
         const targetUser = { ...userForAction };
-        setUserForAction(null); // Close modal for better UX
+        setUserForAction(null);
         try {
-            await handleToggleAdminRole(targetUser); // Call original function
-            
-            // Refetch and update local state to ensure UI is up-to-date for the next interaction
+            await handleToggleAdminRole(targetUser);
             const userDoc = await db.collection('users').doc(targetUser.uid).get();
             if (userDoc.exists) {
                 const updatedProfile = { uid: userDoc.id, ...userDoc.data() } as UserProfile;
-                setUserProfiles(prev => ({
-                    ...prev,
-                    [targetUser.uid]: updatedProfile
-                }));
+                setUserProfiles(prev => ({ ...prev, [targetUser.uid]: updatedProfile }));
             }
-        } catch (error) {
-            console.error("Error toggling admin role and refetching profile:", error);
-        }
+        } catch (error) { console.error("Error toggling admin role:", error); }
     };
 
     const wrappedOnToggleMute = async () => {
         if (!userForAction) return;
         const targetUser = { ...userForAction };
-        setUserForAction(null); // Close modal
+        setUserForAction(null);
         try {
-            await handleToggleMute(targetUser); // Call original function
-
-            // Refetch and update state
+            await handleToggleMute(targetUser);
             const userDoc = await db.collection('users').doc(targetUser.uid).get();
             if (userDoc.exists) {
                 const updatedProfile = { uid: userDoc.id, ...userDoc.data() } as UserProfile;
-                setUserProfiles(prev => ({
-                    ...prev,
-                    [targetUser.uid]: updatedProfile
-                }));
+                setUserProfiles(prev => ({ ...prev, [targetUser.uid]: updatedProfile }));
             }
-        } catch (error) {
-            console.error("Error toggling mute status and refetching profile:", error);
-        }
+        } catch (error) { console.error("Error toggling mute status:", error); }
     };
 
-    // Ban status is already reactive via onSnapshot on 'app_config', so we only need to call the function and close the modal.
     const wrappedOnToggleBan = () => {
         if (!userForAction) return;
         handleToggleBan(userForAction.uid);
         setUserForAction(null);
     };
-    // --- FIX END ---
 
     if (!isOpen) return null;
     
@@ -2250,22 +2856,16 @@ const ChatModal: React.FC<{
                     <div className="flex border border-sky-600 rounded-lg p-1">
                         <button 
                             onClick={() => setActiveTab('public')}
-                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'public' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'public' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
                         >
                             الدردشة العامة
                         </button>
                          <button 
                             onClick={() => setActiveTab('private')}
-                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors relative ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors relative ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
                         >
                             المحادثات الخاصة
                              {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab('groups')}
-                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'groups' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
-                        >
-                            المجموعات
                         </button>
                     </div>
                 </header>
@@ -2292,7 +2892,7 @@ const ChatModal: React.FC<{
                         {messages.map(msg => {
                             const profile = userProfiles[msg.uid];
                             if (bannedUids.includes(msg.uid) && !isCurrentUserAdmin) return null;
-                            if (!profile && !msg.displayName) return null; // Don't render if profile hasn't loaded yet
+                            if (!profile && !msg.displayName) return null;
 
                             const isMyMessage = msg.uid === user.uid;
                             const isBlockedByMe = blockedUsers.includes(msg.uid);
@@ -2391,10 +2991,8 @@ const ChatModal: React.FC<{
                         })}
                         <div ref={messagesEndRef} />
                     </div>
-                   ) : activeTab === 'private' ? (
-                       <PrivateConversationsList user={user} onConversationSelect={onStartPrivateChat}/>
                    ) : (
-                       <GroupsList user={user} onSelectGroup={onOpenGroupChat} isDeveloper={isDeveloper} showAlert={showAlert} />
+                       <PrivateConversationsList user={user} onConversationSelect={onStartPrivateChat}/>
                    )}
                 </main>
                 {activeTab === 'public' && (
@@ -2844,87 +3442,74 @@ const PrivateChatModal: React.FC<{
     );
 };
 
-// --- Logged In Layout ---
-const LoggedInLayout: React.FC<{ 
-    user: firebase.User;
-    showAlert: (message: string, type?: 'error' | 'success') => void;
-}> = ({ user, showAlert }) => {
+// --- Logged In Layout (Manages state for logged-in users) ---
+const LoggedInLayout: React.FC<{ user: firebase.User }> = ({ user }) => {
     const [activeTab, setActiveTab] = useState<LoggedInView>('home');
     const [startDate, setStartDate] = useState<Date | null>(null);
     const [counterImage, setCounterImage] = useState<string | null>(null);
+    const [showResetModal, setShowResetModal] = useState(false);
     const [showSetDateModal, setShowSetDateModal] = useState(false);
-    const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
-    const [showDeleteImageConfirmModal, setShowDeleteImageConfirmModal] = useState(false);
+    const [showDeleteImageModal, setShowDeleteImageModal] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
-    const [notifications, setNotifications] = useState<Notification[]>([]);
     const [showChat, setShowChat] = useState(false);
+    const [showPrivateChat, setShowPrivateChat] = useState(false);
+    const [privateChatUser, setPrivateChatUser] = useState<UserProfile | null>(null);
     
-    const [privateChatTargetUser, setPrivateChatTargetUser] = useState<UserProfile | null>(null);
-    const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
-    const [userToBlock, setUserToBlock] = useState<UserProfile | null>(null);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
     const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
-    const [hasUnreadPrivateMessages, setHasUnreadPrivateMessages] = useState(false);
-    const [activeGroup, setActiveGroup] = useState<Group | null>(null);
+    const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
+    const [hasUnread, setHasUnread] = useState(false);
+    const [alert, setAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
     const isDeveloper = DEVELOPER_UIDS.includes(user.uid);
 
     useEffect(() => {
-        let unsubscribeCounterImage: () => void;
-        let unsubscribeUser: () => void;
-        let unsubscribeConvos: () => void;
-        let unsubscribeNotifications: () => void;
-    
-        unsubscribeCounterImage = db.collection('app_config').doc('main')
-            .onSnapshot(doc => {
-                setCounterImage(doc.data()?.imageUrl || null);
-            }, err => console.error("Error fetching counter image: ", err));
-    
-        // Unified listener for ALL users to ensure real-time profile updates (e.g., isMuted status).
         const userRef = db.collection('users').doc(user.uid);
-        unsubscribeUser = userRef.onSnapshot(doc => {
-            const data = doc.data();
-            
-            // Handle counter start date based on user type
-            if (user.isAnonymous) {
-                const storedDate = localStorage.getItem('counterStartDate');
-                if (storedDate) setStartDate(new Date(storedDate));
-                else setStartDate(null);
-            } else {
-                if (data?.counterStartDate) {
-                    setStartDate(new Date(data.counterStartDate));
+        const unsubscribeUser = userRef.onSnapshot(doc => {
+            if (doc.exists) {
+                const data = doc.data();
+                if (data?.startDate) {
+                    setStartDate(data.startDate.toDate());
                 } else {
                     setStartDate(null);
                 }
+                setBlockedUsers(data?.blockedUsers || []);
+                setCurrentUserProfile({ uid: user.uid, ...data } as UserProfile);
             }
-    
-            // Update profile state from Firestore for all users
-            setBlockedUsers(data?.blockedUsers || []);
-            setCurrentUserProfile({ uid: doc.id, ...data } as UserProfile);
-        }, err => console.error("Error fetching user data: ", err));
-    
-        // Listen for private message notifications for all users
-        unsubscribeConvos = db.collection('users').doc(user.uid).collection('conversations')
-            .where('hasUnread', '==', true).limit(1)
-            .onSnapshot(snapshot => {
-                setHasUnreadPrivateMessages(!snapshot.empty);
-            }, err => console.error("Error fetching unread status:", err));
+        });
+
+        const globalSettingsRef = db.collection('app_config').doc('global_settings');
+        const unsubscribeGlobalSettings = globalSettingsRef.onSnapshot(doc => {
+            if (doc.exists) {
+                const data = doc.data();
+                setCounterImage(data?.globalCounterImage || null);
+            } else {
+                setCounterImage(null);
+            }
+        });
+
+        const unsubscribeNotifications = db.collection('notifications').orderBy('timestamp', 'desc').onSnapshot(snapshot => {
+            const fetchedNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
+            setNotifications(fetchedNotifications);
+        });
         
-        unsubscribeNotifications = db.collection('notifications').orderBy('timestamp', 'desc')
-            .onSnapshot(snapshot => {
-                const fetchedNotifications = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                } as Notification));
-                setNotifications(fetchedNotifications);
-            }, err => console.error("Error fetching notifications: ", err));
-    
+        const unsubscribeConversations = db.collection('users').doc(user.uid).collection('conversations')
+            .where('hasUnread', '==', true).limit(1).onSnapshot(snapshot => {
+                setHasUnread(!snapshot.empty);
+        });
+
         return () => {
-            if (unsubscribeCounterImage) unsubscribeCounterImage();
-            if (unsubscribeUser) unsubscribeUser();
-            if (unsubscribeConvos) unsubscribeConvos();
-            if (unsubscribeNotifications) unsubscribeNotifications();
+            unsubscribeUser();
+            unsubscribeGlobalSettings();
+            unsubscribeNotifications();
+            unsubscribeConversations();
         };
-    }, [user]);
+    }, [user.uid]);
+
+    const showAlert = (message: string, type: 'success' | 'error' = 'error') => {
+        setAlert({ message, type });
+        setTimeout(() => setAlert(null), 4000);
+    };
 
     const handleSignOut = async () => {
         try {
@@ -2934,193 +3519,246 @@ const LoggedInLayout: React.FC<{
         }
     };
     
-    const handleBlockUser = async () => {
-        if (!userToBlock) return;
-        const targetUid = userToBlock.uid;
-        setBlockedUsers(prev => [...prev, targetUid]);
-        setUserToBlock(null);
+    const handleStartCounter = async () => {
+        const newStartDate = new Date();
         try {
-            await db.collection('users').doc(user.uid).update({
-                blockedUsers: firebase.firestore.FieldValue.arrayUnion(targetUid)
-            });
-        } catch (error) { console.error("Firestore update failed for block.", error); }
-    };
-    
-    const handleUnblockUser = async (targetUid: string) => {
-        setBlockedUsers(prev => prev.filter(uid => uid !== targetUid));
-        try {
-            await db.collection('users').doc(user.uid).update({
-                blockedUsers: firebase.firestore.FieldValue.arrayRemove(targetUid)
-            });
-        } catch (error) { console.error("Firestore update failed for unblock.", error); }
+            await db.collection('users').doc(user.uid).set({ startDate: newStartDate }, { merge: true });
+            setStartDate(newStartDate);
+        } catch (error) {
+            console.error("Error starting counter:", error);
+        }
     };
 
-    const handleToggleAdminRole = async (targetUser: UserProfile) => {
-        await db.collection('users').doc(targetUser.uid).update({ isAdmin: !targetUser.isAdmin });
+    const handleResetCounter = async () => {
+        const newStartDate = new Date();
+        try {
+            await db.collection('users').doc(user.uid).update({ startDate: newStartDate });
+            setStartDate(newStartDate);
+            setShowResetModal(false);
+        } catch (error) {
+            console.error("Error resetting counter:", error);
+        }
+    };
+
+    const handleSetStartDate = async (date: string) => {
+        const newDate = new Date(date);
+        try {
+            await db.collection('users').doc(user.uid).update({ startDate: newDate });
+            setStartDate(newDate);
+            setShowSetDateModal(false);
+        } catch (error) { console.error("Error setting start date:", error); }
+    };
+
+    const handleSetCounterImage = async (url: string) => {
+        try {
+            await db.collection('app_config').doc('global_settings').set({ globalCounterImage: url }, { merge: true });
+            setCounterImage(url); // Optimistic update
+        } catch (error) { console.error("Error setting global image:", error); }
+    };
+
+    const handleDeleteCounterImage = async () => {
+        try {
+            await db.collection('app_config').doc('global_settings').update({
+                globalCounterImage: firebase.firestore.FieldValue.delete()
+            });
+            setCounterImage(null); // Optimistic update
+            setShowDeleteImageModal(false);
+        } catch (error) { console.error("Error deleting global image:", error); }
+    };
+    
+    const handleBlockUser = async (userToBlock: UserProfile) => {
+        if (blockedUsers.includes(userToBlock.uid)) return;
+        const newBlocked = [...blockedUsers, userToBlock.uid];
+        try {
+            await db.collection('users').doc(user.uid).update({
+                blockedUsers: newBlocked
+            });
+            setBlockedUsers(newBlocked);
+        } catch (error) {
+            console.error("Error blocking user:", error);
+        }
+    };
+
+    const handleUnblockUser = async (uidToUnblock: string) => {
+        if (!blockedUsers.includes(uidToUnblock)) return;
+        const newBlocked = blockedUsers.filter(uid => uid !== uidToUnblock);
+        try {
+            await db.collection('users').doc(user.uid).update({
+                blockedUsers: newBlocked
+            });
+            setBlockedUsers(newBlocked);
+        } catch (error) {
+            console.error("Error unblocking user:", error);
+        }
+    };
+    
+    const handleStartPrivateChat = (otherUser: UserProfile) => {
+        setPrivateChatUser(otherUser);
+        setShowChat(false);
+        setShowPrivateChat(true);
+    };
+    
+    const handleClosePrivateChat = () => {
+        setShowPrivateChat(false);
+        setPrivateChatUser(null);
+        setShowChat(true);
+    };
+    
+     const handleToggleAdminRole = async (targetUser: UserProfile) => {
+        if (!isDeveloper) {
+            showAlert("You don't have permission for this action.");
+            return;
+        }
+        const newAdminStatus = !targetUser.isAdmin;
+        try {
+            await db.collection('users').doc(targetUser.uid).update({
+                isAdmin: newAdminStatus
+            });
+            showAlert(`${targetUser.displayName} is ${newAdminStatus ? 'now an admin' : 'no longer an admin'}.`, 'success');
+        } catch (error) {
+            console.error("Error toggling admin role:", error);
+            showAlert("Failed to update admin status.");
+        }
     };
 
     const handleToggleMute = async (targetUser: UserProfile) => {
-        await db.collection('users').doc(targetUser.uid).update({ isMuted: !targetUser.isMuted });
+        if (!currentUserProfile?.isAdmin && !isDeveloper) {
+            showAlert("You don't have permission for this action.");
+            return;
+        }
+        const newMuteStatus = !targetUser.isMuted;
+        try {
+            await db.collection('users').doc(targetUser.uid).update({
+                isMuted: newMuteStatus
+            });
+            showAlert(`${targetUser.displayName} has been ${newMuteStatus ? 'muted' : 'unmuted'}.`, 'success');
+        } catch (error) {
+            console.error("Error toggling mute status:", error);
+            showAlert("Failed to update mute status.");
+        }
     };
 
-    const handleToggleBan = async (uid: string) => {
+    const handleToggleBan = async (uidToToggle: string) => {
+        if (!currentUserProfile?.isAdmin && !isDeveloper) {
+            showAlert("You don't have permission for this action.");
+            return;
+        }
         const metaRef = db.collection('app_config').doc('public_chat_meta');
-        const doc = await metaRef.get();
-        const bannedUids = doc.data()?.bannedUids || [];
-        if (bannedUids.includes(uid)) {
-            await metaRef.update({ bannedUids: firebase.firestore.FieldValue.arrayRemove(uid) });
-        } else {
-            await metaRef.update({ bannedUids: firebase.firestore.FieldValue.arrayUnion(uid) });
+        const isCurrentlyBanned = (await metaRef.get()).data()?.bannedUids?.includes(uidToToggle);
+        const updateAction = isCurrentlyBanned
+            ? firebase.firestore.FieldValue.arrayRemove(uidToToggle)
+            : firebase.firestore.FieldValue.arrayUnion(uidToToggle);
+
+        try {
+            await metaRef.set({ bannedUids: updateAction }, { merge: true });
+            showAlert(`User has been ${isCurrentlyBanned ? 'unbanned' : 'banned'}.`, 'success');
+        } catch (error) {
+            console.error("Error toggling ban status:", error);
+            showAlert("Failed to update ban status.");
         }
     };
     
     const handlePinMessage = async (message: Message) => {
         const metaRef = db.collection('app_config').doc('public_chat_meta');
-        const doc = await metaRef.get();
-        const currentPinnedId = doc.data()?.pinnedMessage?.id;
+        const currentPinned = (await metaRef.get()).data()?.pinnedMessage;
         
-        if (currentPinnedId === message.id) { // Unpin if it's the same message
-            await metaRef.set({ pinnedMessage: null }, { merge: true });
-        } else {
-            const pin: PinnedMessage = { id: message.id, text: message.text, uid: message.uid, displayName: message.displayName };
-            await metaRef.set({ pinnedMessage: pin }, { merge: true });
+        try {
+            if (currentPinned?.id === message.id) {
+                // Unpin
+                await metaRef.update({ pinnedMessage: firebase.firestore.FieldValue.delete() });
+                 showAlert("Message unpinned.", 'success');
+            } else {
+                // Pin
+                 const newPin: PinnedMessage = {
+                    id: message.id,
+                    text: message.text,
+                    uid: message.uid,
+                    displayName: message.displayName,
+                };
+                await metaRef.update({ pinnedMessage: newPin });
+                showAlert("Message pinned.", 'success');
+            }
+        } catch (error) {
+             console.error("Error pinning message:", error);
+             showAlert("Failed to update pinned message.");
         }
     };
-    
+
     const handleDeleteMessage = async (messageId: string) => {
-        await db.collection('messages').doc(messageId).delete();
-    };
-
-    const handleUpdateMemberRole = async (groupId: string, memberUid: string, newRole: GroupMemberRole) => {
         try {
-            await db.collection('groups').doc(groupId).collection('members').doc(memberUid).update({ role: newRole });
-            showAlert('تم تحديث دور العضو بنجاح.', 'success');
-        } catch (error) {
-            console.error("Error updating member role:", error);
-            showAlert('فشل تحديث دور العضو.');
+            await db.collection('messages').doc(messageId).delete();
+            showAlert('تم حذف الرسالة.', 'success');
+        } catch (e) {
+            console.error("Error deleting message:", e);
+            showAlert('فشل حذف الرسالة.');
         }
     };
 
-    const handleKickMember = async (groupId: string, member: GroupMember) => {
-        try {
-            const batch = db.batch();
-            const groupRef = db.collection('groups').doc(groupId);
-            const memberRef = groupRef.collection('members').doc(member.uid);
-            batch.delete(memberRef);
-            batch.update(groupRef, { memberUids: firebase.firestore.FieldValue.arrayRemove(member.uid) });
-            await batch.commit();
-            showAlert(`تم طرد ${member.displayName} من المجموعة.`, 'success');
-        } catch (error) {
-            console.error("Error kicking member:", error);
-            showAlert('فشل طرد العضو.');
-        }
-    };
-
-    const handleLeaveGroup = async (group: Group) => {
-        try {
-            const batch = db.batch();
-            const groupRef = db.collection('groups').doc(group.id);
-            const memberRef = groupRef.collection('members').doc(user.uid);
-            batch.delete(memberRef);
-            batch.update(groupRef, { memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid) });
-            await batch.commit();
-            setActiveGroup(null);
-            showAlert(`لقد غادرت مجموعة "${group.name}".`, 'success');
-        } catch (error) {
-            console.error("Error leaving group:", error);
-            showAlert('فشل مغادرة المجموعة.');
-        }
-    };
-
-    const updateStartDate = async (newDate: Date) => {
-        setStartDate(newDate);
-        if (user.isAnonymous) {
-            localStorage.setItem('counterStartDate', newDate.toISOString());
-        } else {
-            try {
-                await db.collection('users').doc(user.uid).set({ counterStartDate: newDate.toISOString() }, { merge: true });
-            } catch (error) { console.error("Error updating start date in Firestore: ", error); }
-        }
-    };
-
-    const handleResetCounter = () => setShowResetConfirmModal(true);
-
-    const confirmResetCounter = () => {
-        updateStartDate(new Date());
-        setShowResetConfirmModal(false);
-        setActiveTab('home');
-    };
-
-    const handleStartCounter = () => updateStartDate(new Date());
-
-    const handleSetNewDate = (dateString: string) => {
-        const [year, month, day] = dateString.split('-').map(Number);
-        const now = new Date();
-        const localDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds());
-        updateStartDate(localDate);
-        setShowSetDateModal(false);
-        setActiveTab('home');
-    };
-
-    const handleSetCounterImage = async (url: string) => {
-        try {
-            await db.collection('app_config').doc('main').set({ imageUrl: url }, { merge: true });
-        } catch (error) { console.error("Error setting counter image in Firestore: ", error); }
-    };
-
-    const confirmDeleteCounterImage = async () => {
-        setShowDeleteImageConfirmModal(false);
-        try {
-            await db.collection('app_config').doc('main').update({
-                imageUrl: firebase.firestore.FieldValue.delete()
-            });
-        } catch (error) { console.error("Error deleting counter image from Firestore: ", error); }
-    };
-
-    const renderActiveView = () => {
+    const renderContent = () => {
         switch (activeTab) {
-            case 'home':
-                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} hasUnreadPrivateMessages={hasUnreadPrivateMessages} />;
             case 'settings':
-                return <SettingsView user={user} handleSignOut={handleSignOut} blockedUsers={blockedUsers} handleUnblockUser={handleUnblockUser} />;
+                return <SettingsView 
+                    user={user} 
+                    handleSignOut={handleSignOut} 
+                    blockedUsers={blockedUsers} 
+                    handleUnblockUser={handleUnblockUser}
+                />;
             case 'counter-settings':
                 return <CounterSettingsView 
                     setActiveTab={setActiveTab} 
-                    handleResetCounter={handleResetCounter} 
+                    handleResetCounter={() => setShowResetModal(true)}
                     setShowSetDateModal={setShowSetDateModal}
                     handleSetCounterImage={handleSetCounterImage}
-                    handleDeleteCounterImage={() => setShowDeleteImageConfirmModal(true)}
+                    handleDeleteCounterImage={() => setShowDeleteImageModal(true)}
                     hasCustomImage={!!counterImage}
                     isDeveloper={isDeveloper}
                 />;
+            case 'home':
             default:
-                return <HomeView user={user} setActiveTab={setActiveTab} startDate={startDate} handleStartCounter={handleStartCounter} counterImage={counterImage} setShowNotifications={setShowNotifications} setShowChat={setShowChat} hasUnreadPrivateMessages={hasUnreadPrivateMessages} />;
+                return <HomeView 
+                    user={user} 
+                    setActiveTab={setActiveTab} 
+                    startDate={startDate} 
+                    handleStartCounter={handleStartCounter}
+                    counterImage={counterImage}
+                    setShowNotifications={setShowNotifications}
+                    setShowChat={setShowChat}
+                    hasUnreadPrivateMessages={hasUnread}
+                    currentUserProfile={currentUserProfile}
+                />;
         }
     };
 
     return (
-        <div 
-            className="w-full min-h-screen bg-cover bg-center"
-            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=2070&auto=format&fit=crop')" }}
-        >
-            <div className="w-full max-w-md mx-auto px-4 pb-20">
-                 {renderActiveView()}
+         <div className="min-h-screen relative pb-16">
+            <div className="w-full max-w-md mx-auto p-4">
+                {renderContent()}
             </div>
-            {showSetDateModal && <SetStartDateModal onClose={() => setShowSetDateModal(false)} onSave={handleSetNewDate}/>}
-            {showResetConfirmModal && <ResetConfirmationModal onConfirm={confirmResetCounter} onClose={() => setShowResetConfirmModal(false)} />}
-            {showDeleteImageConfirmModal && <DeleteImageConfirmationModal onConfirm={confirmDeleteCounterImage} onClose={() => setShowDeleteImageConfirmModal(false)} />}
-            <NotificationsModal isOpen={showNotifications} onClose={() => setShowNotifications(false)} notifications={notifications} isDeveloper={isDeveloper} />
+            {alert && (
+                <div className={`fixed bottom-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg text-white text-sm z-[100] transition-transform duration-300 ${alert.type === 'success' ? 'bg-green-600/90' : 'bg-red-600/90'}`}>
+                    {alert.message}
+                </div>
+            )}
+            <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} />
+            {showResetModal && <ResetConfirmationModal onConfirm={handleResetCounter} onClose={() => setShowResetModal(false)} />}
+            {showSetDateModal && <SetStartDateModal onSave={handleSetStartDate} onClose={() => setShowSetDateModal(false)} />}
+            {showDeleteImageModal && <DeleteImageConfirmationModal onConfirm={handleDeleteCounterImage} onClose={() => setShowDeleteImageModal(false)} />}
+             <NotificationsModal 
+                isOpen={showNotifications} 
+                onClose={() => setShowNotifications(false)} 
+                notifications={notifications} 
+                isDeveloper={isDeveloper}
+            />
             <ChatModal 
-                isOpen={showChat} 
-                onClose={() => setShowChat(false)} 
+                isOpen={showChat}
+                onClose={() => setShowChat(false)}
                 user={user}
                 currentUserProfile={currentUserProfile}
                 blockedUsers={blockedUsers}
-                onStartPrivateChat={(targetUser) => { setPrivateChatTargetUser(targetUser); setShowChat(false); }}
-                onOpenGroupChat={(group) => { setActiveGroup(group); setShowChat(false); }}
-                onBlockUser={(targetUser) => setUserToBlock(targetUser)}
+                onStartPrivateChat={handleStartPrivateChat}
+                onBlockUser={handleBlockUser}
                 onUnblockUser={handleUnblockUser}
-                hasUnreadPrivateMessages={hasUnreadPrivateMessages}
+                hasUnreadPrivateMessages={hasUnread}
                 handleToggleAdminRole={handleToggleAdminRole}
                 handleToggleMute={handleToggleMute}
                 handleToggleBan={handleToggleBan}
@@ -3129,857 +3767,83 @@ const LoggedInLayout: React.FC<{
                 showAlert={showAlert}
                 isDeveloper={isDeveloper}
             />
-            {privateChatTargetUser && (
+            {showPrivateChat && privateChatUser && (
                 <PrivateChatModal
-                    isOpen={!!privateChatTargetUser}
-                    onClose={() => setPrivateChatTargetUser(null)}
+                    isOpen={showPrivateChat}
+                    onClose={handleClosePrivateChat}
                     user={user}
-                    otherUser={privateChatTargetUser}
-                    isBlocked={blockedUsers.includes(privateChatTargetUser.uid)}
-                    onBlockUser={(targetUser) => setUserToBlock(targetUser)}
+                    otherUser={privateChatUser}
+                    isBlocked={blockedUsers.includes(privateChatUser.uid)}
+                    onBlockUser={handleBlockUser}
                     onUnblockUser={handleUnblockUser}
                 />
             )}
-            {activeGroup && (
-                 <GroupChatModal
-                    isOpen={!!activeGroup}
-                    onClose={() => setActiveGroup(null)}
-                    user={user}
-                    group={activeGroup}
-                    currentUserProfile={currentUserProfile}
-                    showAlert={showAlert}
-                    isDeveloper={isDeveloper}
-                    onLeaveGroup={handleLeaveGroup}
-                    onKickMember={handleKickMember}
-                    onUpdateMemberRole={handleUpdateMemberRole}
-                />
-            )}
-            {userToBlock && (
-                <BlockUserConfirmationModal 
-                    userName={userToBlock.displayName}
-                    onConfirm={handleBlockUser}
-                    onClose={() => setUserToBlock(null)}
-                />
-            )}
-            <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} />
         </div>
     );
 };
 
-// --- Custom Alert Component ---
-const CustomAlert: React.FC<{ message: string; type: 'error' | 'success'; onClose: () => void; }> = ({ message, type, onClose }) => {
-    useEffect(() => {
-        const timer = setTimeout(onClose, 3000);
-        return () => clearTimeout(timer);
-    }, [onClose]);
-
-    const bgColor = type === 'error' ? 'bg-red-900/80 border-red-500/50' : 'bg-green-900/80 border-green-500/50';
-    const textColor = type === 'error' ? 'text-red-300' : 'text-green-300';
-    const Icon = type === 'error' ? ShieldExclamationIcon : ShieldCheckIcon;
-
-    return (
-        <div className="fixed top-5 right-1/2 translate-x-1/2 z-[100] w-full max-w-sm p-4">
-            <div className={`flex items-center gap-4 p-4 rounded-lg shadow-lg backdrop-blur-md ${bgColor}`}>
-                <Icon className={`w-6 h-6 flex-shrink-0 ${textColor}`} />
-                <p className="text-white">{message}</p>
-                <button onClick={onClose} className="mr-auto p-1 rounded-full hover:bg-white/10">
-                    <XMarkIcon className="w-5 h-5 text-white" />
-                </button>
-            </div>
-        </div>
-    );
-};
-
-// --- Groups Components ---
-
-const DeleteGroupConfirmationModal: React.FC<{ 
-    groupName: string; 
-    onConfirm: () => void; 
-    onClose: () => void;
-    loading: boolean;
-}> = ({ groupName, onConfirm, onClose, loading }) => (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
-            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد حذف المجموعة</h3>
-            <p className="text-sky-200 text-center">
-                هل أنت متأكد من رغبتك في حذف مجموعة <span className="font-bold">{groupName}</span>؟ سيتم حذف جميع الرسائل والأعضاء بشكل دائم.
-            </p>
-            <div className="flex justify-center gap-4 pt-4">
-                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500">
-                    إلغاء
-                </button>
-                <button onClick={onConfirm} disabled={loading} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-red-500 disabled:opacity-50 disabled:cursor-wait">
-                    {loading ? 'جارِ الحذف...' : 'حذف'}
-                </button>
-            </div>
-        </div>
-    </div>
-);
-
-const CreateGroupModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    user: firebase.User;
-}> = ({ isOpen, onClose, user }) => {
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
-    const [photoURL, setPhotoURL] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-
-    const handleImageUpload = () => {
-        const dialog = uploadcare.openDialog(null, {
-            publicKey: 'e5cdcd97e0e41d6aa881',
-            imagesOnly: true,
-            crop: "1:1",
-        });
-        dialog.done((file: any) => file.promise().done((fileInfo: any) => setPhotoURL(fileInfo.cdnUrl)));
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!name.trim()) {
-            setError('اسم المجموعة مطلوب.');
-            return;
-        }
-        setLoading(true);
-        setError('');
-        try {
-            const groupRef = db.collection('groups').doc();
-            const memberRef = groupRef.collection('members').doc(user.uid);
-            
-            const batch = db.batch();
-
-            batch.set(groupRef, {
-                name,
-                description,
-                photoURL,
-                ownerUid: user.uid,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                memberUids: [user.uid]
-            });
-            
-            batch.set(memberRef, {
-                displayName: user.displayName,
-                photoURL: user.photoURL,
-                role: 'owner'
-            });
-
-            await batch.commit();
-            onClose();
-
-        } catch (err) {
-            console.error("Error creating group:", err);
-            setError('حدث خطأ أثناء إنشاء المجموعة.');
-        } finally {
-            setLoading(false);
-        }
-    };
-    
-    if(!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-            <div className="w-full max-w-md bg-sky-950/90 text-white flex flex-col rounded-lg border border-sky-400/30">
-                 <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
-                    <h2 className="text-xl font-bold text-sky-200">إنشاء مجموعة جديدة</h2>
-                    <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10"><XMarkIcon className="w-6 h-6"/></button>
-                </header>
-                <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                    {error && <ErrorMessage message={error} />}
-                    <div className="flex flex-col items-center space-y-4">
-                        <div className="relative">
-                            <img 
-                                src={photoURL || `https://ui-avatars.com/api/?name=${name || ' '}&background=164e63&color=fff&size=128`}
-                                alt="صورة المجموعة"
-                                className="w-24 h-24 rounded-full object-cover border-4 border-sky-400/50"
-                            />
-                            <button
-                                type="button"
-                                onClick={handleImageUpload}
-                                className="absolute bottom-0 right-0 bg-sky-600 p-2 rounded-full hover:bg-sky-500"
-                            >
-                                <CameraIcon className="w-5 h-5 text-white"/>
-                            </button>
-                        </div>
-                    </div>
-                    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="اسم المجموعة" className="w-full bg-sky-900/50 border border-sky-400/30 rounded-lg py-2 px-4 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
-                    <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="وصف المجموعة (اختياري)" className="w-full bg-sky-900/50 border border-sky-400/30 rounded-lg py-2 px-4 h-24 resize-none focus:outline-none focus:ring-2 focus:ring-sky-500"/>
-                    <div className="flex justify-end gap-4 pt-4">
-                        <button type="button" onClick={onClose} className="px-4 py-2 font-semibold rounded-md bg-gray-600 hover:bg-gray-500">إلغاء</button>
-                        <button type="submit" disabled={loading} className="px-4 py-2 font-semibold rounded-md bg-sky-600 hover:bg-sky-500 disabled:opacity-50">
-                            {loading ? 'جارِ الإنشاء...' : 'إنشاء'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-};
-
-const GroupsList: React.FC<{
-    user: firebase.User;
-    onSelectGroup: (group: Group) => void;
-    isDeveloper: boolean;
-    showAlert: (message: string, type?: 'error' | 'success') => void;
-}> = ({ user, onSelectGroup, isDeveloper, showAlert }) => {
-    const [groups, setGroups] = useState<Group[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-    const [groupToDelete, setGroupToDelete] = useState<Group | null>(null);
-    const [isDeleting, setIsDeleting] = useState(false);
-
-
-    useEffect(() => {
-        const unsubscribe = db.collection('groups').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-            const fetchedGroups = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
-            setGroups(fetchedGroups);
-            setLoading(false);
-        });
-        return unsubscribe;
-    }, []);
-    
-    const handleConfirmDelete = async () => {
-        if (!groupToDelete) return;
-        setIsDeleting(true);
-        const groupId = groupToDelete.id;
-        const groupRef = db.collection('groups').doc(groupId);
-
-        try {
-            const batch = db.batch();
-
-            const messagesSnapshot = await groupRef.collection('messages').get();
-            messagesSnapshot.forEach(doc => batch.delete(doc.ref));
-
-            const membersSnapshot = await groupRef.collection('members').get();
-            membersSnapshot.forEach(doc => batch.delete(doc.ref));
-
-            const requestsSnapshot = await groupRef.collection('joinRequests').get();
-            requestsSnapshot.forEach(doc => batch.delete(doc.ref));
-
-            batch.delete(groupRef);
-            await batch.commit();
-            showAlert(`تم حذف مجموعة "${groupToDelete.name}" بنجاح.`, 'success');
-        } catch (error) {
-            console.error("Error deleting group:", error);
-            showAlert('فشل حذف المجموعة.');
-        } finally {
-            setGroupToDelete(null);
-            setIsDeleting(false);
-        }
-    };
-
-    const joinedGroups = groups.filter(group => group.memberUids && group.memberUids.includes(user.uid));
-    const otherGroups = groups.filter(group => !group.memberUids || !group.memberUids.includes(user.uid));
-
-    if (loading) {
-        return <p className="text-center text-sky-400 py-8">جارِ تحميل المجموعات...</p>
-    }
-
-    const groupItem = (group: Group) => (
-         <div key={group.id} className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50 text-right group">
-            <button onClick={() => onSelectGroup(group)} className="w-full flex items-center gap-3 text-right flex-grow">
-                <img
-                    src={group.photoURL || `https://ui-avatars.com/api/?name=${group.name}&background=164e63&color=fff&size=128`}
-                    alt={group.name}
-                    className="w-12 h-12 rounded-full object-cover flex-shrink-0"
-                />
-                <div className="overflow-hidden">
-                    <p className="font-semibold truncate">{group.name}</p>
-                    <p className="text-sm text-sky-400 truncate">{group.description}</p>
-                </div>
-            </button>
-            {isDeveloper && (
-                <button 
-                    onClick={(e) => { e.stopPropagation(); setGroupToDelete(group); }} 
-                    className="p-2 text-red-500 hover:text-red-300 hover:bg-white/10 rounded-full transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 flex-shrink-0"
-                    aria-label={`حذف مجموعة ${group.name}`}
-                >
-                    <TrashIcon className="w-5 h-5"/>
-                </button>
-            )}
-        </div>
-    );
-
-    return (
-        <div className="p-2 space-y-2">
-            <button
-                onClick={() => setShowCreateGroupModal(true)}
-                className="w-full flex items-center justify-center gap-2 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-teal-500 to-teal-700 hover:from-teal-400 hover:to-teal-600 mb-4"
-            >
-                <PlusIcon className="w-6 h-6" />
-                <span>إنشاء مجموعة جديدة</span>
-            </button>
-
-            {groups.length === 0 ? (
-                <p className="text-center text-sky-400 py-8">لا توجد مجموعات حالياً.</p>
-            ) : (
-                <>
-                    {joinedGroups.length > 0 && (
-                        <div>
-                            <h3 className="text-lg font-semibold text-sky-200 px-2 my-4 border-b border-sky-400/30 pb-2">مجموعاتي</h3>
-                            {joinedGroups.map(groupItem)}
-                        </div>
-                    )}
-                    {otherGroups.length > 0 && (
-                         <div>
-                            <h3 className="text-lg font-semibold text-sky-200 px-2 my-4 border-b border-sky-400/30 pb-2">اكتشف مجموعات أخرى</h3>
-                            {otherGroups.map(groupItem)}
-                        </div>
-                    )}
-                </>
-            )}
-            
-            {showCreateGroupModal && (
-                <CreateGroupModal 
-                    isOpen={showCreateGroupModal}
-                    onClose={() => setShowCreateGroupModal(false)}
-                    user={user}
-                />
-            )}
-            {groupToDelete && (
-                 <DeleteGroupConfirmationModal 
-                    groupName={groupToDelete.name}
-                    onConfirm={handleConfirmDelete}
-                    onClose={() => setGroupToDelete(null)}
-                    loading={isDeleting}
-                />
-            )}
-        </div>
-    );
-};
-
-const KickConfirmationModal: React.FC<{ memberName: string; onConfirm: () => void; onClose: () => void; }> = ({ memberName, onConfirm, onClose }) => (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
-            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد طرد العضو</h3>
-            <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في طرد {memberName} من المجموعة؟</p>
-            <div className="flex justify-center gap-4 pt-4">
-                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">إلغاء</button>
-                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">طرد</button>
-            </div>
-        </div>
-    </div>
-);
-
-const LeaveGroupConfirmationModal: React.FC<{ groupName: string; onConfirm: () => void; onClose: () => void; }> = ({ groupName, onConfirm, onClose }) => (
-     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-        <div className="w-full max-w-sm bg-sky-950 border border-red-500/50 rounded-lg p-6 space-y-4 text-white">
-            <h3 className="text-xl font-bold text-red-400 text-center">تأكيد مغادرة المجموعة</h3>
-            <p className="text-sky-200 text-center">هل أنت متأكد من رغبتك في مغادرة {groupName}؟</p>
-            <div className="flex justify-center gap-4 pt-4">
-                <button onClick={onClose} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">إلغاء</button>
-                <button onClick={onConfirm} className="px-6 py-2 font-semibold text-white rounded-md transition-all duration-300 ease-in-out shadow-md border border-white/20 focus:outline-none bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm">مغادرة</button>
-            </div>
-        </div>
-    </div>
-);
-
-const GroupMemberActionModal: React.FC<{
-    member: GroupMember;
-    onClose: () => void;
-    onKick: () => void;
-    onPromote?: () => void;
-    onDemote?: () => void;
-}> = ({ member, onClose, onKick, onPromote, onDemote }) => (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[65] p-4" onClick={onClose}>
-        <div className="w-full max-w-sm bg-sky-950/90 border border-sky-500/50 rounded-lg p-6 space-y-4 text-white" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-sky-300 text-center truncate">إجراءات لـ {member.displayName}</h3>
-            <div className="flex flex-col gap-4 pt-4">
-                {onPromote && (
-                    <button onClick={onPromote} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
-                        <ArrowUpCircleIcon className="w-6 h-6 text-green-400"/>
-                        <span className="text-green-400">ترقية لمشرف</span>
-                    </button>
-                )}
-                {onDemote && (
-                    <button onClick={onDemote} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-sky-800/50 hover:bg-sky-700/70">
-                        <ArrowDownCircleIcon className="w-6 h-6 text-yellow-400"/>
-                        <span className="text-yellow-400">تخفيض لرتبة عضو</span>
-                    </button>
-                )}
-                <button onClick={onKick} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
-                    <UserMinusIcon className="w-6 h-6 text-red-400"/>
-                    <span className="text-red-400">طرد من المجموعة</span>
-                </button>
-            </div>
-        </div>
-    </div>
-);
-
-
-const GroupMembersModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    group: Group;
-    currentUserRole: GroupMemberRole;
-    currentUserUid: string;
-    onLeaveGroup: (group: Group) => void;
-    onKickMember: (groupId: string, member: GroupMember) => void;
-    onUpdateMemberRole: (groupId: string, memberUid: string, newRole: GroupMemberRole) => void;
-    showAlert: (message: string, type?: 'error' | 'success') => void;
-}> = ({ isOpen, onClose, group, currentUserRole, currentUserUid, onLeaveGroup, onKickMember, onUpdateMemberRole, showAlert }) => {
-    const [activeTab, setActiveTab] = useState<'members' | 'requests'>('members');
-    const [members, setMembers] = useState<GroupMember[]>([]);
-    const [requests, setRequests] = useState<JoinRequest[]>([]);
-    const [loadingMembers, setLoadingMembers] = useState(true);
-    const [loadingRequests, setLoadingRequests] = useState(true);
-    const [memberForAction, setMemberForAction] = useState<GroupMember | null>(null);
-    const [showKickConfirm, setShowKickConfirm] = useState(false);
-    const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-
-    useEffect(() => {
-        if (!isOpen) return;
-        
-        const membersRef = db.collection('groups').doc(group.id).collection('members');
-        const unsubscribeMembers = membersRef.onSnapshot(snapshot => {
-            const fetchedMembers = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as GroupMember));
-            const visibleMembers = fetchedMembers.filter(member => !DEVELOPER_UIDS.includes(member.uid));
-            setMembers(visibleMembers);
-            setLoadingMembers(false);
-        });
-
-        let unsubscribeRequests = () => {};
-        if (currentUserRole === 'owner' || currentUserRole === 'admin') {
-            const requestsRef = db.collection('groups').doc(group.id).collection('joinRequests').orderBy('timestamp', 'desc');
-            unsubscribeRequests = requestsRef.onSnapshot(snapshot => {
-                const fetchedRequests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JoinRequest));
-                setRequests(fetchedRequests);
-                setLoadingRequests(false);
-            });
-        }
-
-        return () => {
-            unsubscribeMembers();
-            unsubscribeRequests();
-        };
-    }, [isOpen, group.id, currentUserRole, currentUserUid]);
-
-    const handleApproveRequest = async (request: JoinRequest) => {
-        const batch = db.batch();
-        const groupRef = db.collection('groups').doc(group.id);
-        const memberRef = groupRef.collection('members').doc(request.id);
-        const requestRef = groupRef.collection('joinRequests').doc(request.id);
-
-        batch.set(memberRef, {
-            displayName: request.displayName,
-            photoURL: request.photoURL,
-            role: 'member'
-        });
-        batch.update(groupRef, {
-            memberUids: firebase.firestore.FieldValue.arrayUnion(request.id)
-        });
-        batch.delete(requestRef);
-
-        await batch.commit();
-        showAlert(`${request.displayName} تمت الموافقة على انضمامه.`, 'success');
-    };
-
-    const handleDenyRequest = async (requestId: string) => {
-        await db.collection('groups').doc(group.id).collection('joinRequests').doc(requestId).delete();
-    };
-
-    if (!isOpen) return null;
-
-    const canManage = currentUserRole === 'owner' || currentUserRole === 'admin';
-
-    return (
-        <>
-         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-            <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
-                <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
-                    <h2 className="text-xl font-bold text-sky-200">أعضاء المجموعة</h2>
-                    <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10"><XMarkIcon className="w-6 h-6"/></button>
-                </header>
-                {canManage && (
-                     <div className="flex border-b border-sky-600 p-1 flex-shrink-0">
-                        <button onClick={() => setActiveTab('members')} className={`w-1/2 py-2 text-sm font-semibold transition-colors ${activeTab === 'members' ? 'border-b-2 border-sky-300 text-sky-200' : 'text-sky-400 hover:text-white'}`}>
-                            الأعضاء ({members.length})
-                        </button>
-                        <button onClick={() => setActiveTab('requests')} className={`w-1/2 py-2 text-sm font-semibold transition-colors ${activeTab === 'requests' ? 'border-b-2 border-sky-300 text-sky-200' : 'text-sky-400 hover:text-white'}`}>
-                            الطلبات ({requests.length})
-                        </button>
-                    </div>
-                )}
-                <main className="flex-grow overflow-y-auto p-2">
-                    {activeTab === 'members' ? (
-                        loadingMembers ? <p className="text-center p-4">جارِ التحميل...</p> : (
-                            members.map(member => {
-                                const canManageThisMember = (currentUserRole === 'owner' && member.uid !== currentUserUid) || (currentUserRole === 'admin' && member.role === 'member' && member.uid !== currentUserUid);
-                                return (
-                                <div key={member.uid} className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50 group">
-                                    <div className="flex items-center gap-3">
-                                        <img src={member.photoURL || `https://ui-avatars.com/api/?name=${member.displayName}&background=0284c7&color=fff&size=128`} alt={member.displayName} className="w-10 h-10 rounded-full object-cover"/>
-                                        <div>
-                                            <p>{member.displayName}</p>
-                                            <p className="text-xs text-sky-400 capitalize">{member.role}</p>
-                                        </div>
-                                    </div>
-                                    {canManageThisMember && (
-                                        <button onClick={() => setMemberForAction(member)} className="p-2 rounded-full text-sky-300 hover:bg-sky-700/50 opacity-0 group-hover:opacity-100 focus:opacity-100">
-                                            <DotsVerticalIcon className="w-5 h-5"/>
-                                        </button>
-                                    )}
-                                </div>
-                            )})
-                        )
-                    ) : (
-                        loadingRequests ? <p className="text-center p-4">جارِ التحميل...</p> : requests.length > 0 ? (
-                             requests.map(request => (
-                                <div key={request.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-800/50">
-                                    <div className="flex items-center gap-3">
-                                        <img src={request.photoURL || `https://ui-avatars.com/api/?name=${request.displayName}&background=0284c7&color=fff&size=128`} alt={request.displayName} className="w-10 h-10 rounded-full object-cover"/>
-                                        <p>{request.displayName}</p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => handleDenyRequest(request.id)} className="px-3 py-1 text-sm bg-red-800/80 hover:bg-red-700/80 rounded-md">رفض</button>
-                                        <button onClick={() => handleApproveRequest(request)} className="px-3 py-1 text-sm bg-green-800/80 hover:bg-green-700/80 rounded-md">موافقة</button>
-                                    </div>
-                                </div>
-                            ))
-                        ) : <p className="text-center text-sky-400 p-8">لا توجد طلبات انضمام.</p>
-                    )}
-                </main>
-                 {currentUserRole !== 'owner' && (
-                    <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
-                        <button onClick={() => setShowLeaveConfirm(true)} className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg transition-colors bg-red-800/50 hover:bg-red-700/70">
-                            <ArrowLeftOnRectangleIcon className="w-6 h-6 text-red-300"/>
-                            <span className="font-semibold text-red-300">مغادرة المجموعة</span>
-                        </button>
-                    </footer>
-                )}
-            </div>
-        </div>
-        {memberForAction && (
-            <GroupMemberActionModal 
-                member={memberForAction}
-                onClose={() => setMemberForAction(null)}
-                onPromote={currentUserRole === 'owner' && memberForAction.role === 'member' ? () => {
-                    onUpdateMemberRole(group.id, memberForAction.uid, 'admin');
-                    setMemberForAction(null);
-                } : undefined}
-                onDemote={currentUserRole === 'owner' && memberForAction.role === 'admin' ? () => {
-                    onUpdateMemberRole(group.id, memberForAction.uid, 'member');
-                    setMemberForAction(null);
-                } : undefined}
-                onKick={() => { setShowKickConfirm(true); }}
-            />
-        )}
-        {showKickConfirm && memberForAction && (
-            <KickConfirmationModal 
-                memberName={memberForAction.displayName}
-                onConfirm={() => {
-                    onKickMember(group.id, memberForAction);
-                    setShowKickConfirm(false);
-                    setMemberForAction(null);
-                }}
-                onClose={() => {
-                    setShowKickConfirm(false);
-                    setMemberForAction(null);
-                }}
-            />
-        )}
-        {showLeaveConfirm && (
-            <LeaveGroupConfirmationModal 
-                groupName={group.name}
-                onConfirm={() => {
-                    onLeaveGroup(group);
-                    setShowLeaveConfirm(false);
-                }}
-                onClose={() => setShowLeaveConfirm(false)}
-            />
-        )}
-        </>
-    );
-};
-
-const GroupChatModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    user: firebase.User;
-    group: Group;
-    currentUserProfile: UserProfile | null;
-    showAlert: (message: string, type?: 'error' | 'success') => void;
-    isDeveloper: boolean;
-    onLeaveGroup: (group: Group) => void;
-    onKickMember: (groupId: string, member: GroupMember) => void;
-    onUpdateMemberRole: (groupId: string, memberUid: string, newRole: GroupMemberRole) => void;
-}> = ({ isOpen, onClose, user, group, currentUserProfile, showAlert, isDeveloper, onLeaveGroup, onKickMember, onUpdateMemberRole }) => {
-    const [loading, setLoading] = useState(true);
-    const [membership, setMembership] = useState<{ role: GroupMemberRole | 'non-member' | 'pending' } | null>(null);
-
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [newMessage, setNewMessage] = useState('');
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-    const [replyTo, setReplyTo] = useState<Message | null>(null);
-    const [showMembersModal, setShowMembersModal] = useState(false);
-
-    useEffect(() => {
-        if (!isOpen) return;
-        setLoading(true);
-
-        const memberRef = db.collection('groups').doc(group.id).collection('members').doc(user.uid);
-        const unsubscribeMember = memberRef.onSnapshot(async (doc) => {
-            if (doc.exists) {
-                const memberData = doc.data() as GroupMember;
-                setMembership({ role: memberData.role });
-                setLoading(false);
-            } else {
-                 if (isDeveloper) {
-                    try {
-                        const groupRef = db.collection('groups').doc(group.id);
-                        const devMemberRef = groupRef.collection('members').doc(user.uid);
-                        
-                        const batch = db.batch();
-                        batch.update(groupRef, { memberUids: firebase.firestore.FieldValue.arrayUnion(user.uid) });
-                        batch.set(devMemberRef, {
-                            displayName: user.displayName,
-                            photoURL: user.photoURL,
-                            role: 'member'
-                        });
-                        await batch.commit();
-                    } catch (error) {
-                        console.error("Developer auto-join failed:", error);
-                        showAlert("Failed to auto-join as developer.");
-                        setMembership({ role: 'non-member' });
-                        setLoading(false);
-                    }
-                } else {
-                    const requestRef = db.collection('groups').doc(group.id).collection('joinRequests').doc(user.uid);
-                    const reqDoc = await requestRef.get();
-                    setMembership({ role: reqDoc.exists ? 'pending' : 'non-member' });
-                    setLoading(false);
-                }
-            }
-        });
-
-        return () => unsubscribeMember();
-    }, [isOpen, group.id, user.uid, isDeveloper, showAlert, user.displayName, user.photoURL]);
-
-    useEffect(() => {
-        if (!isOpen || !membership || !['member', 'admin', 'owner'].includes(membership.role)) {
-            setMessages([]); // Clear messages if not a member
-            return;
-        }
-        
-        const messagesRef = db.collection('groups').doc(group.id).collection('messages').orderBy('timestamp', 'asc').limit(100);
-        const unsubscribeMessages = messagesRef.onSnapshot(snapshot => {
-            const fetchedMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
-            setMessages(fetchedMessages);
-        });
-
-        return () => unsubscribeMessages();
-
-    }, [isOpen, group.id, membership]);
-
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
-
-    const handleJoinRequest = async () => {
-        try {
-            await db.collection('groups').doc(group.id).collection('joinRequests').doc(user.uid).set({
-                displayName: user.displayName,
-                photoURL: user.photoURL,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-            });
-            setMembership({ role: 'pending' });
-            showAlert('تم إرسال طلب الانضمام بنجاح.', 'success');
-        } catch (error) {
-            console.error("Error sending join request:", error);
-            showAlert('حدث خطأ أثناء إرسال طلب الانضمام.');
-        }
-    };
-
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newMessage.trim()) return;
-
-        const { uid, displayName, photoURL } = user;
-        const messageData: any = {
-            text: newMessage,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-            uid, displayName, photoURL
-        };
-        if (replyTo) {
-            messageData.replyTo = {
-                id: replyTo.id, text: replyTo.text, displayName: replyTo.displayName,
-            };
-        }
-        await db.collection('groups').doc(group.id).collection('messages').add(messageData);
-        setNewMessage('');
-        setReplyTo(null);
-    };
-
-    const handleReaction = async (messageId: string, emoji: string) => {
-        const messageRef = db.collection('groups').doc(group.id).collection('messages').doc(messageId);
-        await db.runTransaction(async (transaction) => {
-            const doc = await transaction.get(messageRef);
-            if (!doc.exists) return;
-            const reactions = doc.data()?.reactions || {};
-            const uidsForEmoji = reactions[emoji] || [];
-            if (uidsForEmoji.includes(user.uid)) {
-                reactions[emoji] = uidsForEmoji.filter((uid: string) => uid !== user.uid);
-                if (reactions[emoji].length === 0) delete reactions[emoji];
-            } else {
-                reactions[emoji] = [...uidsForEmoji, user.uid];
-            }
-            transaction.update(messageRef, { reactions });
-        });
-    };
-    
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[55]">
-            <div className="w-full h-full max-w-md bg-sky-950/90 text-white flex flex-col">
-                <header className="flex items-center justify-between p-4 border-b border-sky-400/30">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                        <img src={group.photoURL || `https://ui-avatars.com/api/?name=${group.name}&background=164e63&color=fff&size=128`} alt={group.name} className="w-10 h-10 rounded-full object-cover flex-shrink-0"/>
-                        <div className="overflow-hidden">
-                            <h2 className="text-lg font-bold text-sky-200 truncate">{group.name}</h2>
-                            <p className="text-xs text-sky-400 truncate">{group.description}</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {membership?.role && ['member', 'admin', 'owner'].includes(membership.role) && (
-                            <button onClick={() => setShowMembersModal(true)} className="p-2 rounded-full hover:bg-white/10"><UsersIcon className="w-6 h-6"/></button>
-                        )}
-                        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10"><XMarkIcon className="w-6 h-6"/></button>
-                    </div>
-                </header>
-                <main className="flex-grow overflow-y-auto p-4 space-y-4">
-                    {loading ? (
-                        <p className="text-center p-8">جارِ التحميل...</p>
-                    ) : membership?.role && ['member', 'admin', 'owner'].includes(membership.role) ? (
-                         messages.map(msg => (
-                            <div key={msg.id} className={`flex items-start gap-3 ${msg.uid === user.uid ? 'flex-row-reverse' : ''}`}>
-                                <img src={msg.photoURL || `https://ui-avatars.com/api/?name=${msg.displayName}&background=0284c7&color=fff&size=128`} alt={msg.displayName} className="w-10 h-10 rounded-full object-cover flex-shrink-0"/>
-                                <div className={`flex flex-col w-full ${msg.uid === user.uid ? 'items-end' : 'items-start'}`}>
-                                    <div className={`relative p-3 rounded-2xl max-w-xs md:max-w-md ${msg.uid === user.uid ? 'bg-sky-600 rounded-br-none' : 'bg-slate-700 rounded-bl-none'}`}>
-                                        <p className="text-sm font-bold text-sky-200 mb-1">{msg.displayName}</p>
-                                        <p className="text-white whitespace-pre-wrap break-all">{msg.text}</p>
-                                    </div>
-                                    <p className="text-xs text-sky-500 mt-1 px-1">{msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit'}) : '...'}</p>
-                                </div>
-                            </div>
-                         ))
-                    ) : membership?.role === 'pending' ? (
-                        <div className="text-center p-8 text-sky-300">طلبك للانضمام قيد المراجعة.</div>
-                    ) : (
-                         <div className="text-center p-8 flex flex-col items-center gap-4">
-                            <p className="text-sky-300">أنت لست عضواً في هذه المجموعة.</p>
-                            <button onClick={handleJoinRequest} className="px-6 py-2 font-semibold rounded-md bg-sky-600 hover:bg-sky-500">
-                                إرسال طلب انضمام
-                            </button>
-                        </div>
-                    )}
-                     <div ref={messagesEndRef} />
-                </main>
-                {membership?.role && ['member', 'admin', 'owner'].includes(membership.role) && (
-                     <footer className="p-4 border-t border-sky-400/30">
-                        <form onSubmit={handleSendMessage} className="flex items-center gap-3">
-                            <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="اكتب رسالتك..." className="flex-grow bg-sky-900/50 border border-sky-400/30 rounded-full py-2 px-4 focus:outline-none focus:ring-2 focus:ring-sky-500"/>
-                            <button type="submit" className="bg-sky-600 text-white p-3 rounded-full hover:bg-sky-500 disabled:bg-sky-800" disabled={!newMessage.trim()}><SendIcon className="w-6 h-6"/></button>
-                        </form>
-                    </footer>
-                )}
-            </div>
-            {showMembersModal && membership?.role && (
-                 <GroupMembersModal 
-                    isOpen={showMembersModal}
-                    onClose={() => setShowMembersModal(false)}
-                    group={group}
-                    currentUserRole={membership.role as GroupMemberRole}
-                    currentUserUid={user.uid}
-                    onLeaveGroup={onLeaveGroup}
-                    onKickMember={onKickMember}
-                    onUpdateMemberRole={onUpdateMemberRole}
-                    showAlert={showAlert}
-                />
-            )}
-        </div>
-    );
-};
 
 // --- Main App Component ---
-// FIX: Add the missing App component and its default export.
 const App: React.FC = () => {
-    const [view, setView] = useState<View>('main');
     const [user, setUser] = useState<firebase.User | null>(null);
+    const [view, setView] = useState<View>('main');
     const [loading, setLoading] = useState(true);
-    const [isLocked, setIsLocked] = useState(!!localStorage.getItem('appLockPin'));
-    const [alert, setAlert] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
-
+    const [appLocked, setAppLocked] = useState(!!localStorage.getItem('appLockPin'));
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
-            if (!currentUser) {
-                // If user signs out, ensure they are not locked out of the login screen
-                setIsLocked(false); 
-                localStorage.removeItem('appLockPin');
-                setView('main');
-            }
             setLoading(false);
+            if (!currentUser) {
+                // If logged out, reset to main view and unlock app
+                setView('main');
+                setAppLocked(false);
+            }
         });
-
-        return () => unsubscribe();
+        return unsubscribe;
     }, []);
 
     const handleGuestLogin = async () => {
         try {
+            await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
             await auth.signInAnonymously();
-        } catch (error: any) {
-            showAlert(getFirebaseErrorMessage(error.code));
+        } catch (error) {
+            console.error("Guest login failed:", error);
         }
-    };
-
-    const showAlert = (message: string, type: 'error' | 'success' = 'error') => {
-        setAlert({ message, type });
     };
 
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-sky-950">
+            <main className="min-h-screen flex items-center justify-center p-4">
                 <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-sky-400"></div>
-            </div>
+            </main>
         );
     }
-
-    if (isLocked) {
-        return <LockScreen onUnlock={() => setIsLocked(false)} />;
-    }
     
-    const renderView = () => {
-        if (!user) {
-            switch (view) {
-                case 'login':
-                    return <LoginView setView={setView} />;
-                case 'signup':
-                    return <SignupView setView={setView} />;
-                case 'forgot-password':
-                    return <ForgotPasswordView setView={setView} />;
-                default:
-                    return <MainView setView={setView} handleGuestLogin={handleGuestLogin} />;
-            }
-        }
-        return <LoggedInLayout user={user} showAlert={showAlert} />;
-    };
+    if (appLocked) {
+        return <LockScreen onUnlock={() => setAppLocked(false)} />;
+    }
 
     return (
-        <>
-            <main 
-                className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
-                style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=2070&auto=format&fit=crop')" }}
-            >
-                <div className="w-full max-w-md">
-                    {renderView()}
-                </div>
-            </main>
-            {alert && <CustomAlert message={alert.message} type={alert.type} onClose={() => setAlert(null)} />}
-        </>
+        <main 
+            className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
+            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=2070&auto=format&fit=crop')" }}
+        >
+            <div className="w-full max-w-sm">
+                {!user ? (
+                    <>
+                        {view === 'main' && <MainView setView={setView} handleGuestLogin={handleGuestLogin} />}
+                        {view === 'login' && <LoginView setView={setView} />}
+                        {view === 'signup' && <SignupView setView={setView} />}
+                        {view === 'forgot-password' && <ForgotPasswordView setView={setView} />}
+                    </>
+                ) : (
+                    <LoggedInLayout user={user} />
+                )}
+            </div>
+        </main>
     );
 };
 
+// FIX: Export the App component to be used in index.tsx
 export default App;

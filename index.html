@@ -7,13 +7,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=Cairo:wght@400;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
               sans: ['Cairo', 'sans-serif'],
+              amiri: ['Amiri', 'serif'],
             },
           },
         },
@@ -28,6 +29,23 @@
       .text-shadow {
         text-shadow: 0 3px 5px rgba(0, 0, 0, 1);
       }
+      @keyframes flicker {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.1) rotate(-5deg); opacity: 0.9; }
+        75% { transform: scale(0.95) rotate(5deg); opacity: 1; }
+      }
+      .animate-flicker {
+        animation: flicker 1.5s infinite ease-in-out;
+      }
+      @keyframes breath {
+        0% { transform: scale(0.6); opacity: 0.7; }
+        21% { transform: scale(1); opacity: 1; } /* 4s / 19s */
+        58% { transform: scale(1); opacity: 1; } /* (4s+7s) / 19s */
+        100% { transform: scale(0.6); opacity: 0.7; } /* (4s+7s+8s) / 19s */
+      }
+      .breathing-circle {
+        animation: breath 19s infinite ease-in-out;
+      }
     </style>
   <script type="importmap">
 {
@@ -37,7 +55,8 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
     "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.4.0/"
+    "firebase/": "https://aistudiocdn.com/firebase@^12.4.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^0.14.0"
   }
 }
 </script>
