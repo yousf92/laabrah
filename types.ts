@@ -1,9 +1,10 @@
-
+// FIX: Import React to use types like React.Dispatch and React.SetStateAction.
+import React from 'react';
 import firebase from 'firebase/compat/app';
 
 // --- Types and Interfaces ---
 export type View = 'main' | 'login' | 'signup' | 'forgot-password';
-export type LoggedInView = 'home' | 'settings' | 'counter-settings';
+export type LoggedInView = 'home' | 'settings' | 'counter-settings' | 'journal';
 
 export interface UserProfile {
     uid: string;
@@ -47,6 +48,13 @@ export interface PinnedMessage {
     text: string;
     uid: string;
     displayName: string;
+}
+
+export interface JournalEntry {
+    id: string;
+    text: string;
+    mood: string;
+    timestamp: firebase.firestore.Timestamp;
 }
 
 export interface ViewProps {

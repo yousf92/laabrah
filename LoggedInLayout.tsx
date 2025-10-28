@@ -1,17 +1,17 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { db, firebase, auth } from './firebase';
 import { UserProfile, LoggedInView, Notification, Message, PinnedMessage } from './types';
 import { DEVELOPER_UIDS } from './constants';
 import { calculateTimeDifference, getArabicUnitLabel } from './utils';
-import { StopwatchIcon, SettingsIcon, HouseIcon, UserIcon, ChatIcon, NotificationIcon } from './icons';
+import { StopwatchIcon, SettingsIcon, HouseIcon, UserIcon, ChatIcon, NotificationIcon, JournalIcon } from './icons';
 import { NajdaFeature, DesireSolverFeature, FaithDoseFeature, CommitmentDocumentFeature } from './Features';
 import { SettingsView, CounterSettingsView, ResetConfirmationModal, DeleteImageConfirmationModal, SetStartDateModal } from './Settings';
 import { NotificationsModal } from './Notifications';
 import { ChatModal, PrivateChatModal } from './Chat';
+import { JournalView } from './Journal';
 import { SetPinModal } from './LockScreen';
 
-const CounterBar: React.FC<{ label: string; progress: number; colorClass: string }> = ({ label, progress, colorClass }) => {
+const CounterBar = ({ label, progress, colorClass }: { label: string; progress: number; colorClass: string }): React.ReactElement => {
     return (
         <div className="flex-grow h-12 bg-black/40 rounded-lg p-1 relative">
             <div
@@ -25,19 +25,29 @@ const CounterBar: React.FC<{ label: string; progress: number; colorClass: string
     );
 };
 
-const HomeView: React.FC<{ 
-    user: firebase.User; 
-    setActiveTab: (tab: LoggedInView) => void; 
-    startDate: Date | null; 
+const HomeView = ({
+    user,
+    setActiveTab,
+    startDate,
+    handleStartCounter,
+    counterImage,
+    setShowNotifications,
+    setShowChat,
+    hasUnreadPrivateMessages,
+    currentUserProfile,
+}: {
+    user: firebase.User;
+    setActiveTab: (tab: LoggedInView) => void;
+    startDate: Date | null;
     handleStartCounter: () => void;
     counterImage: string | null;
     setShowNotifications: (show: boolean) => void;
     setShowChat: (show: boolean) => void;
     hasUnreadPrivateMessages: boolean;
     currentUserProfile: UserProfile | null;
-}> = ({ user, setActiveTab, startDate, handleStartCounter, counterImage, setShowNotifications, setShowChat, hasUnreadPrivateMessages, currentUserProfile }) => {
-    // FIX: Changed lazy initializer to direct initialization. This is a speculative fix for the "Expected 1 arguments, but got 0" error, which is likely a symptom of an upstream type issue.
-    const [now, setNow] = useState(new Date());
+}): React.ReactElement => {
+    // FIX: The use of React.FC was causing a type inference issue, leading to a runtime error. Changed to a standard function component definition and reverted to lazy initialization for useState.
+    const [now, setNow] = useState(() => new Date());
     const animationFrameId = useRef<number>();
 
     useEffect(() => {
@@ -187,9 +197,10 @@ const HomeView: React.FC<{
     );
 };
 
-const BottomNavBar: React.FC<{ activeTab: LoggedInView; setActiveTab: (tab: LoggedInView) => void; }> = ({ activeTab, setActiveTab }) => {
+const BottomNavBar = ({ activeTab, setActiveTab }: { activeTab: LoggedInView; setActiveTab: (tab: LoggedInView) => void; }): React.ReactElement | null => {
     const navItems = [
         { id: 'home', label: 'الرئيسية', icon: HouseIcon },
+        { id: 'journal', label: 'اليوميات', icon: JournalIcon },
         { id: 'settings', label: 'الإعدادات', icon: SettingsIcon },
     ];
     
@@ -446,6 +457,9 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
                         hasUnreadPrivateMessages={hasUnread}
                         currentUserProfile={currentUserProfile}
                     />
+                )}
+                {activeTab === 'journal' && (
+                    <JournalView user={user} />
                 )}
                 {activeTab === 'settings' && (
                     <SettingsView

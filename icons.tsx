@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export const FireIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -246,5 +245,12 @@ export const SealIcon: React.FC<{ className?: string }> = ({ className }) => (
       <path d="M50 10c22.09 0 40 17.91 40 40s-17.91 40-40 40S10 72.09 10 50 27.91 10 50 10zm-2.9 1.2c-1.9.3-3.8.8-5.6 1.5C29.2 17.2 20.8 27 19.3 38.9c-.3 2.3-.3 4.6 0 6.9 1.7 15 13.2 26.5 28.2 28.2 2.3.3 4.6.3 6.9 0 15-1.7 26.5-13.2 28.2-28.2.3-2.3.3-4.6 0-6.9-1.5-11.9-9.9-21.7-22.2-26.2-1.8-.7-3.7-1.2-5.6-1.5-.9-.2-1.9-.2-2.8 0z" opacity=".7"/>
       <path d="M50 15c19.33 0 35 15.67 35 35s-15.67 35-35 35S15 69.33 15 50 30.67 15 50 15z"/>
       <path fill="#fff" d="M50 26.25l5.87 11.89 13.13 1.91-9.5 9.26 2.24 13.08L50 56.63l-11.74 6.17 2.24-13.08-9.5-9.26 13.13-1.91z"/>
+    </svg>
+);
+
+export const JournalIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 21H4.5A2.25 2.25 0 012.25 18.75V9A2.25 2.25 0 014.5 6.75h3.75" />
     </svg>
 );
