@@ -20,4 +20,14 @@ if (!firebase.apps.length) {
 const auth = firebase.auth();
 const db = firebase.firestore();
 
+// Set default persistence to 'local' to ensure users remain logged in
+// across browser sessions and application updates. This is the default for
+// web apps but is set explicitly here for clarity and robustness.
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+  .catch((error) => {
+    // This can happen in certain environments like private browsing mode.
+    console.error("Firebase: Could not set auth persistence.", error);
+  });
+
+
 export { auth, db, firebase };

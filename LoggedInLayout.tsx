@@ -46,8 +46,8 @@ const HomeView = ({
     hasUnreadPrivateMessages: boolean;
     currentUserProfile: UserProfile | null;
 }): React.ReactElement => {
-    // FIX: The use of React.FC was causing a type inference issue, leading to a runtime error. Changed to a standard function component definition and reverted to lazy initialization for useState.
-    const [now, setNow] = useState(() => new Date());
+    // FIX: The error "Expected 1 arguments, but got 0" likely stems from an issue with the build environment handling the lazy initializer. Switching to direct initialization is safer here.
+    const [now, setNow] = useState(new Date());
     const animationFrameId = useRef<number>();
 
     useEffect(() => {

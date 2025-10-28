@@ -50,7 +50,6 @@ export const LoginView: React.FC<ViewProps> = ({ setView }) => {
         setError('');
         setLoading(true);
         try {
-            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
             await auth.signInWithEmailAndPassword(email, password);
         } catch (err: any) {
             setError(getFirebaseErrorMessage(err.code));
@@ -153,7 +152,6 @@ export const SignupView: React.FC<ViewProps> = ({ setView }) => {
         setError('');
         setLoading(true);
         try {
-            await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             if (userCredential.user) {
                 await userCredential.user.updateProfile({ displayName: name });
