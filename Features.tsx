@@ -77,7 +77,7 @@ export const NajdaFeature: React.FC = () => {
         
             if (apiKeysRef.current.length === 0) {
                 console.error("Gemini API key not found in process.env.API_KEY");
-                setError('لم يتم العثور على مفتاح API. يرجى إعداده.');
+                setError('لم يتم العثور على مفتاح API. يرجى التأكد من إعداده بشكل صحيح في متغيرات البيئة الخاصة بالمنصة.');
                 setAdviceLoading(false);
                 return;
             }
@@ -121,7 +121,7 @@ export const NajdaFeature: React.FC = () => {
             
             if (!success) {
                 if (!error && !advice) {
-                   setError('فشلت جميع المحاولات. تأكد من صلاحية مفاتيح API أو أن الشبكة مستقرة.');
+                   setError('فشلت جميع المحاولات باستخدام المفاتيح المتاحة. قد تكون المشكلة من صلاحية المفاتيح، أو حصة الاستخدام (quota)، أو الاتصال بالشبكة.');
                 }
                 if (!error) {
                     setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
@@ -224,7 +224,7 @@ export const DesireSolverFeature: React.FC = () => {
 
         if (apiKeysRef.current.length === 0) {
             console.error("Gemini API key not found in process.env.API_KEY");
-            setError('حدث خطأ في الاتصال، يرجى المحاولة مرة أخرى.');
+            setError('لم يتم العثور على مفتاح API. يرجى التأكد من إعداده بشكل صحيح في متغيرات البيئة الخاصة بالمنصة.');
             setIsLoading(false);
             return;
         }
@@ -281,7 +281,7 @@ export const DesireSolverFeature: React.FC = () => {
         }
         
         if (!success && !error) {
-            setError('فشلت جميع محاولات الاتصال. تأكد من صلاحية مفاتيح API أو أن الشبكة مستقرة.');
+            setError('فشلت جميع المحاولات باستخدام المفاتيح المتاحة. قد تكون المشكلة من صلاحية المفاتيح، أو حصة الاستخدام (quota)، أو الاتصال بالشبكة.');
         }
 
         setIsLoading(false);
@@ -372,7 +372,7 @@ export const FaithDoseFeature: React.FC = () => {
 
         if (apiKeysRef.current.length === 0) {
             console.error("Gemini API key not found in process.env.API_KEY");
-            setError('حدث خطأ في الاتصال، يرجى المحاولة مرة أخرى.');
+            setError('لم يتم العثور على مفتاح API. يرجى التأكد من إعداده بشكل صحيح في متغيرات البيئة الخاصة بالمنصة.');
             setIsLoading(false);
             return;
         }
@@ -429,7 +429,7 @@ export const FaithDoseFeature: React.FC = () => {
         }
         
         if (!success && !error) {
-            setError('فشلت جميع محاولات الاتصال. تأكد من صلاحية مفاتيح API أو أن الشبكة مستقرة.');
+            setError('فشلت جميع المحاولات باستخدام المفاتيح المتاحة. قد تكون المشكلة من صلاحية المفاتيح، أو حصة الاستخدام (quota)، أو الاتصال بالشبكة.');
         }
 
         setIsLoading(false);
