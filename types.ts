@@ -14,6 +14,9 @@ export interface UserProfile {
     isAdmin?: boolean;
     isMuted?: boolean;
     commitmentDocument?: string;
+    najdaAdviceIndex?: number;
+    desireSolutionsIndex?: number;
+    salafStoriesIndex?: number;
 }
 
 export interface Conversation extends Omit<UserProfile, 'uid'> {

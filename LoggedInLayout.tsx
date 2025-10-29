@@ -132,9 +132,9 @@ const HomeView = ({
                     </div>
                 </main>
 
-                <NajdaFeature />
-                <DesireSolverFeature />
-                <FaithDoseFeature />
+                <NajdaFeature user={user} currentUserProfile={currentUserProfile} />
+                <DesireSolverFeature user={user} currentUserProfile={currentUserProfile} />
+                <FaithDoseFeature user={user} currentUserProfile={currentUserProfile} />
                 <CommitmentDocumentFeature user={user} initialText={currentUserProfile?.commitmentDocument} />
 
                 <div className="mt-8 max-w-sm mx-auto">
@@ -190,9 +190,9 @@ const HomeView = ({
                    </div>
                 </div>
             </main>
-            <NajdaFeature />
-            <DesireSolverFeature />
-            <FaithDoseFeature />
+            <NajdaFeature user={user} currentUserProfile={currentUserProfile} />
+            <DesireSolverFeature user={user} currentUserProfile={currentUserProfile} />
+            <FaithDoseFeature user={user} currentUserProfile={currentUserProfile} />
             <CommitmentDocumentFeature user={user} initialText={currentUserProfile?.commitmentDocument} />
         </div>
     );

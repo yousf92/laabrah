@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 // FIX: Imported firebase to resolve 'Cannot find namespace' error for the firebase.User type.
 import { db, firebase } from './firebase';
+import { UserProfile } from './types';
 import { FireIcon, BookOpenIcon, XMarkIcon, PencilIcon, SealIcon } from './icons';
 import { ErrorMessage } from './common';
 
@@ -19,9 +20,15 @@ const FALLBACK_SALAF_STORIES = [
     { id: 'fallback2', text: 'سُئل الإمام أحمد: متى يجد العبد طعم الراحة؟ فقال: عند أول قدم يضعها في الجنة.'}
 ];
 
+// --- Feature Props ---
+interface FeatureProps {
+    user: firebase.User;
+    currentUserProfile: UserProfile | null;
+}
+
 
 // --- Najda (Help) Feature ---
-export const NajdaFeature: React.FC = () => {
+export const NajdaFeature: React.FC<FeatureProps> = ({ user, currentUserProfile }) => {
     type NajdaView = 'home' | 'breathing' | 'advice';
     const [view, setView] = useState<NajdaView>('home');
     const [breathingText, setBreathingText] = useState('استعد...');
@@ -76,7 +83,7 @@ export const NajdaFeature: React.FC = () => {
     useEffect(() => {
         if (view !== 'advice') return;
 
-        const fetchAdvice = async () => {
+        const fetchAndSetNextAdvice = async () => {
             setAdviceLoading(true);
             setAdvice('');
             setError('');
@@ -96,8 +103,16 @@ export const NajdaFeature: React.FC = () => {
                 }
                 
                 const advices = allAdviceRef.current;
-                const randomIndex = Math.floor(Math.random() * advices.length);
-                setAdvice(advices[randomIndex].text);
+                const currentIndex = currentUserProfile?.najdaAdviceIndex ?? -1;
+                const nextIndex = (currentIndex + 1) % advices.length;
+
+                setAdvice(advices[nextIndex].text);
+
+                // Update Firestore asynchronously for non-guest users
+                if (user && !user.isAnonymous) {
+                    db.collection('users').doc(user.uid).update({ najdaAdviceIndex: nextIndex })
+                      .catch(err => console.error("Failed to update najdaAdviceIndex", err));
+                }
 
             } catch (err: any) {
                 console.error("Error fetching Najda advice from content.json, using fallback:", err);
@@ -109,8 +124,8 @@ export const NajdaFeature: React.FC = () => {
             }
         };
         
-        fetchAdvice();
-    }, [view]);
+        fetchAndSetNextAdvice();
+    }, [view, user, currentUserProfile]);
 
     const handleClose = () => {
         setView('home');
@@ -175,13 +190,13 @@ export const NajdaFeature: React.FC = () => {
 };
 
 // --- Desire Solver Feature ---
-export const DesireSolverFeature: React.FC = () => {
+export const DesireSolverFeature: React.FC<FeatureProps> = ({ user, currentUserProfile }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [currentResponse, setCurrentResponse] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const allSolutionsRef = useRef<{ id: string; text: string; }[]>([]);
-    const shownSolutionIdsRef = useRef<Set<string>>(new Set());
+    const sessionIndexRef = useRef<number>(-1);
 
     const loadSolutions = async () => {
         if (allSolutionsRef.current.length > 0) return;
@@ -205,23 +220,19 @@ export const DesireSolverFeature: React.FC = () => {
     const getNewSolution = async () => {
         setIsLoading(true);
         setError('');
-        setCurrentResponse('');
 
         await loadSolutions();
 
         const sourceData = allSolutionsRef.current;
-        let availableSolutions = sourceData.filter(solution => !shownSolutionIdsRef.current.has(solution.id));
+        if (sourceData.length > 0) {
+            const nextIndex = (sessionIndexRef.current + 1) % sourceData.length;
+            sessionIndexRef.current = nextIndex;
+            setCurrentResponse(sourceData[nextIndex].text);
 
-        if (availableSolutions.length === 0) {
-            shownSolutionIdsRef.current.clear();
-            availableSolutions = sourceData;
-        }
-
-        if (availableSolutions.length > 0) {
-            const randomIndex = Math.floor(Math.random() * availableSolutions.length);
-            const newSolution = availableSolutions[randomIndex];
-            setCurrentResponse(newSolution.text);
-            shownSolutionIdsRef.current.add(newSolution.id);
+            if (user && !user.isAnonymous) {
+                db.collection('users').doc(user.uid).update({ desireSolutionsIndex: nextIndex })
+                    .catch(err => console.error("Failed to update desireSolutionsIndex", err));
+            }
         } else {
             setCurrentResponse('لا توجد حلول متاحة حاليًا.');
         }
@@ -230,6 +241,7 @@ export const DesireSolverFeature: React.FC = () => {
     };
     
     const handleOpen = () => {
+        sessionIndexRef.current = currentUserProfile?.desireSolutionsIndex ?? -1;
         setIsOpen(true);
         getNewSolution();
     };
@@ -238,7 +250,6 @@ export const DesireSolverFeature: React.FC = () => {
         setIsOpen(false);
         setCurrentResponse('');
         setError('');
-        shownSolutionIdsRef.current.clear();
     };
 
     if (!isOpen) {
@@ -257,24 +268,23 @@ export const DesireSolverFeature: React.FC = () => {
     return (
         <div className="fixed inset-0 bg-sky-950/90 backdrop-blur-lg flex flex-col items-center justify-center z-50 p-4 text-white text-center">
             <div className="max-w-md w-full flex-grow flex flex-col items-center justify-start overflow-y-auto py-4 min-h-0">
-                {isLoading && (
+                {isLoading && !currentResponse && (
                     <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
                 )}
                 {error && <ErrorMessage message={error} />}
-                {!isLoading && currentResponse && (
+                {!error && currentResponse && (
                      <p className="text-xl font-semibold leading-relaxed text-shadow">{currentResponse}</p>
                 )}
             </div>
             
             <div className="w-full max-w-sm flex flex-col gap-4 pb-10 flex-shrink-0">
-                 {!isLoading && (
-                    <button
-                        onClick={getNewSolution}
-                        className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500"
-                    >
-                        أبغى حل ثاني
-                    </button>
-                 )}
+                <button
+                    onClick={getNewSolution}
+                    disabled={isLoading}
+                    className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-wait"
+                >
+                    أبغى حل ثاني
+                </button>
                  <button
                     onClick={handleClose}
                     className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500"
@@ -287,13 +297,13 @@ export const DesireSolverFeature: React.FC = () => {
 };
 
 // --- Faith Dose Feature ---
-export const FaithDoseFeature: React.FC = () => {
+export const FaithDoseFeature: React.FC<FeatureProps> = ({ user, currentUserProfile }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [currentStory, setCurrentStory] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const allStoriesRef = useRef<{ id: string; text: string; }[]>([]);
-    const shownStoryIdsRef = useRef<Set<string>>(new Set());
+    const sessionIndexRef = useRef<number>(-1);
 
      const loadStories = async () => {
         if (allStoriesRef.current.length > 0) return;
@@ -317,23 +327,19 @@ export const FaithDoseFeature: React.FC = () => {
     const getNewStory = async () => {
         setIsLoading(true);
         setError('');
-        setCurrentStory('');
         
         await loadStories();
 
         const sourceData = allStoriesRef.current;
-        let availableStories = sourceData.filter(story => !shownStoryIdsRef.current.has(story.id));
+        if (sourceData.length > 0) {
+            const nextIndex = (sessionIndexRef.current + 1) % sourceData.length;
+            sessionIndexRef.current = nextIndex;
+            setCurrentStory(sourceData[nextIndex].text);
 
-        if (availableStories.length === 0) {
-            shownStoryIdsRef.current.clear();
-            availableStories = sourceData;
-        }
-
-        if (availableStories.length > 0) {
-            const randomIndex = Math.floor(Math.random() * availableStories.length);
-            const newStory = availableStories[randomIndex];
-            setCurrentStory(newStory.text);
-            shownStoryIdsRef.current.add(newStory.id);
+            if (user && !user.isAnonymous) {
+                db.collection('users').doc(user.uid).update({ salafStoriesIndex: nextIndex })
+                    .catch(err => console.error("Failed to update salafStoriesIndex", err));
+            }
         } else {
             setCurrentStory('لا توجد قصص متاحة حاليًا.');
         }
@@ -342,6 +348,7 @@ export const FaithDoseFeature: React.FC = () => {
     };
     
     const handleOpen = () => {
+        sessionIndexRef.current = currentUserProfile?.salafStoriesIndex ?? -1;
         setIsOpen(true);
         getNewStory();
     };
@@ -350,7 +357,6 @@ export const FaithDoseFeature: React.FC = () => {
         setIsOpen(false);
         setCurrentStory('');
         setError('');
-        shownStoryIdsRef.current.clear(); 
     };
 
     if (!isOpen) {
@@ -370,24 +376,23 @@ export const FaithDoseFeature: React.FC = () => {
     return (
         <div className="fixed inset-0 bg-sky-950/90 backdrop-blur-lg flex flex-col items-center justify-center z-50 p-4 text-white text-center">
             <div className="max-w-md w-full flex-grow flex flex-col items-center justify-start overflow-y-auto py-4 min-h-0">
-                {isLoading && (
+                {isLoading && !currentStory && (
                     <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
                 )}
                 {error && <ErrorMessage message={error} />}
-                {!isLoading && currentStory && (
+                {!error && currentStory && (
                      <p className="text-xl font-semibold leading-relaxed text-shadow">{currentStory}</p>
                 )}
             </div>
             
             <div className="w-full max-w-sm flex flex-col gap-4 pb-10 flex-shrink-0">
-                 {!isLoading && (
-                    <button
-                        onClick={getNewStory}
-                        className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500"
-                    >
-                        أبغى قصة ثانية
-                    </button>
-                 )}
+                <button
+                    onClick={getNewStory}
+                    disabled={isLoading}
+                    className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-wait"
+                >
+                    أبغى قصة ثانية
+                </button>
                  <button
                     onClick={handleClose}
                     className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-gray-600 to-gray-800 hover:from-gray-500 hover:to-gray-700 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-gray-500"
