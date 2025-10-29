@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, firebase, auth } from './firebase';
-import { UserProfile, LoggedInView, Notification, Message, PinnedMessage } from './types';
+import { UserProfile, LoggedInView, Notification, Message, PinnedMessage, Group } from './types';
 import { DEVELOPER_UIDS } from './constants';
 import { calculateTimeDifference, getArabicUnitLabel } from './utils';
 import { StopwatchIcon, SettingsIcon, HouseIcon, UserIcon, ChatIcon, NotificationIcon, JournalIcon } from './icons';
@@ -10,6 +10,7 @@ import { NotificationsModal } from './Notifications';
 import { ChatModal, PrivateChatModal } from './Chat';
 import { JournalView } from './Journal';
 import { SetPinModal } from './LockScreen';
+import { GroupChatModal } from './GroupChat';
 
 const CounterBar = ({ label, progress, colorClass }: { label: string; progress: number; colorClass: string }): React.ReactElement => {
     return (
@@ -46,9 +47,10 @@ const HomeView = ({
     hasUnreadPrivateMessages: boolean;
     currentUserProfile: UserProfile | null;
 }): React.ReactElement => {
-    // FIX: The error "Expected 1 arguments, but got 0" likely stems from an issue with the build environment handling the lazy initializer. Switching to direct initialization is safer here.
-    const [now, setNow] = useState(new Date());
-    const animationFrameId = useRef<number>();
+    // FIX: The `useState` call with `new Date()` was causing an error. Using a lazy initializer function `() => new Date()` works around potential build environment issues with direct object instantiation inside `useState`.
+    const [now, setNow] = useState(() => new Date());
+    // FIX: Changed useRef to have an initial value of null to satisfy a strict requirement for useRef to be called with one argument. This also improves type safety for the requestAnimationFrame ID.
+    const animationFrameId = useRef<number | null>(null);
 
     useEffect(() => {
         let frameId: number;
@@ -183,8 +185,7 @@ const HomeView = ({
                             <CounterBar label={`${timeDiff.months} ${getArabicUnitLabel(timeDiff.months, 'month')}`} progress={(timeDiff.days / daysInCurrentMonth) * 100} colorClass="bg-orange-500" />
                             <CounterBar label={`${timeDiff.days} ${getArabicUnitLabel(timeDiff.days, 'day')}`} progress={(timeDiff.hours / 24) * 100} colorClass="bg-lime-500" />
                             <CounterBar label={`${timeDiff.hours} ${getArabicUnitLabel(timeDiff.hours, 'hour')}`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-blue-500" />
-                            <CounterBar label={`${timeDiff.minutes} ${getArabicUnitLabel(timeDiff.minutes, 'minute')}`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-pink-500" />
-                            <CounterBar label={`${timeDiff.seconds} ${getArabicUnitLabel(timeDiff.seconds, 'second')}`} progress={((timeDiff.seconds * 1000 + milliseconds) / 60000) * 100} colorClass="bg-yellow-500" />
+                            <CounterBar label={`${timeDiff.minutes} ${getArabicUnitLabel(timeDiff.minutes, 'minute')}`} progress={((timeDiff.seconds * 1000 + milliseconds) / 60000) * 100} colorClass="bg-pink-500" />
                         </div>
                    </div>
                 </div>
@@ -241,7 +242,8 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
     const [showChat, setShowChat] = useState(false);
     const [showPrivateChat, setShowPrivateChat] = useState(false);
     const [privateChatUser, setPrivateChatUser] = useState<UserProfile | null>(null);
-    
+    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
     const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
@@ -379,6 +381,11 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
         setShowChat(false);
     };
 
+    const handleStartGroupChat = (group: Group) => {
+        setSelectedGroup(group);
+        setShowChat(false); // Close the main chat modal
+    };
+
     const handleToggleAdminRole = async (targetUser: UserProfile) => {
         if (!isDeveloper) return;
         const targetUserRef = db.collection('users').doc(targetUser.uid);
@@ -497,6 +504,7 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
                 currentUserProfile={currentUserProfile}
                 blockedUsers={blockedUsers}
                 onStartPrivateChat={handleStartPrivateChat}
+                onStartGroupChat={handleStartGroupChat}
                 onBlockUser={handleBlockUser}
                 onUnblockUser={handleUnblockUser}
                 hasUnreadPrivateMessages={hasUnread}
@@ -517,6 +525,14 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
                     isBlocked={blockedUsers.includes(privateChatUser.uid)}
                     onBlockUser={handleBlockUser}
                     onUnblockUser={handleUnblockUser}
+                />
+            )}
+            {selectedGroup && (
+                <GroupChatModal 
+                    isOpen={!!selectedGroup}
+                    onClose={() => setSelectedGroup(null)}
+                    user={user}
+                    group={selectedGroup}
                 />
             )}
             {showSetPinModal && <SetPinModal onPinSet={handleSetPin} onClose={() => setShowSetPinModal(false)} />}

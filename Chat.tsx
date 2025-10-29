@@ -1,9 +1,10 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { db, firebase } from './firebase';
-import { Message, UserProfile, Conversation } from './types';
+import { Message, UserProfile, Conversation, Group } from './types';
 import { DEVELOPER_UIDS, EMOJI_REACTIONS } from './constants';
-import { XMarkIcon, SendIcon, DotsVerticalIcon, FaceSmileIcon, PinIcon, ReplyIcon, CopyIcon, PencilIcon, TrashIcon, PaperAirplaneIcon, UserMinusIcon, UserPlusIcon, ShieldExclamationIcon, SpeakerXMarkIcon } from './icons';
+import { XMarkIcon, SendIcon, DotsVerticalIcon, FaceSmileIcon, PinIcon, ReplyIcon, CopyIcon, PencilIcon, TrashIcon, PaperAirplaneIcon, UserMinusIcon, UserPlusIcon, ShieldExclamationIcon, SpeakerXMarkIcon, PlusIcon, CameraIcon, CheckIcon, UsersIcon } from './icons';
+
+declare const uploadcare: any;
 
 const MessageActionModal: React.FC<{
     onClose: () => void;
@@ -147,7 +148,6 @@ const DeleteConversationConfirmationModal: React.FC<{ onConfirm: () => void; onC
     </div>
 );
 
-
 const PrivateConversationsList: React.FC<{
     user: firebase.User;
     onConversationSelect: (user: UserProfile) => void;
@@ -220,6 +220,174 @@ const PrivateConversationsList: React.FC<{
     );
 };
 
+const CreateGroupModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    user: firebase.User;
+    onGroupCreated: (group: Group) => void;
+}> = ({ isOpen, onClose, user, onGroupCreated }) => {
+    const [groupName, setGroupName] = useState('');
+    const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
+    const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+    const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const fetchUsers = async () => {
+            try {
+                const snapshot = await db.collection('users').get();
+                const usersList = snapshot.docs
+                    .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
+                    .filter(u => u.uid !== user.uid);
+                setAllUsers(usersList);
+            } catch (err) {
+                console.error("Error fetching users for group creation:", err);
+            }
+        };
+        fetchUsers();
+    }, [isOpen, user.uid]);
+
+    const handleImageUpload = () => {
+        const dialog = uploadcare.openDialog(null, {
+            publicKey: 'e5cdcd97e0e41d6aa881',
+            imagesOnly: true,
+            crop: "1:1",
+        });
+        dialog.done((file: any) => {
+            file.promise().done((fileInfo: any) => setGroupPhoto(fileInfo.cdnUrl));
+        });
+    };
+
+    const handleMemberToggle = (uid: string) => {
+        setSelectedMembers(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
+    };
+
+    const handleCreateGroup = async () => {
+        if (!groupName.trim()) {
+            setError('الرجاء إدخال اسم للمجموعة.');
+            return;
+        }
+        setLoading(true);
+        setError('');
+        try {
+            const groupData = {
+                name: groupName,
+                photoURL: groupPhoto,
+                createdBy: user.uid,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                members: [user.uid, ...selectedMembers],
+            };
+            const docRef = await db.collection('groups').add(groupData);
+            onGroupCreated({ id: docRef.id, ...groupData, createdAt: new (firebase.firestore.Timestamp as any)(0,0) }); // Pass back the new group
+            onClose();
+        } catch (err) {
+            console.error("Error creating group:", err);
+            setError('حدث خطأ أثناء إنشاء المجموعة.');
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <div className="w-full h-[95vh] max-w-md bg-sky-950/90 border border-sky-500/50 rounded-lg flex flex-col">
+                <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-sky-200">إنشاء مجموعة جديدة</h2>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><XMarkIcon className="w-6 h-6 text-white"/></button>
+                </header>
+                <main className="flex-grow p-4 overflow-y-auto space-y-4">
+                    {error && <p className="text-red-400 text-center">{error}</p>}
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="relative">
+                            <img 
+                                src={groupPhoto || `https://ui-avatars.com/api/?name=${groupName || ' '}&background=0369a1&color=fff&size=128`}
+                                alt="صورة المجموعة"
+                                className="w-24 h-24 rounded-full object-cover border-4 border-sky-400/50"
+                            />
+                            <button onClick={handleImageUpload} className="absolute bottom-0 right-0 bg-sky-600 p-2 rounded-full hover:bg-sky-500"><CameraIcon className="w-5 h-5"/></button>
+                        </div>
+                        <input type="text" placeholder="اسم المجموعة" value={groupName} onChange={e => setGroupName(e.target.value)} className="w-full bg-sky-900/50 border border-sky-400/30 rounded-lg py-2 px-4 text-white focus:outline-none focus:ring-2 focus:ring-sky-500"/>
+                    </div>
+                    <div>
+                        <h3 className="text-sky-200 font-semibold my-2">اختر الأعضاء:</h3>
+                        <div className="max-h-60 overflow-y-auto space-y-2 p-2 bg-black/20 rounded-lg">
+                            {allUsers.map(u => (
+                                <div key={u.uid} onClick={() => handleMemberToggle(u.uid)} className={`flex items-center justify-between p-2 rounded-lg cursor-pointer ${selectedMembers.includes(u.uid) ? 'bg-sky-600' : 'hover:bg-sky-800/50'}`}>
+                                    <div className="flex items-center gap-3">
+                                        <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}&background=0284c7&color=fff&size=128`} alt={u.displayName} className="w-10 h-10 rounded-full"/>
+                                        <span>{u.displayName}</span>
+                                    </div>
+                                    {selectedMembers.includes(u.uid) && <CheckIcon className="w-6 h-6 text-white"/>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </main>
+                <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
+                    <button onClick={handleCreateGroup} disabled={loading} className="w-full text-white font-bold py-3 px-4 rounded-lg bg-gradient-to-br from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 disabled:opacity-50">
+                        {loading ? 'جارِ الإنشاء...' : 'إنشاء المجموعة'}
+                    </button>
+                </footer>
+            </div>
+        </div>
+    );
+};
+
+const GroupsList: React.FC<{
+    user: firebase.User;
+    onGroupSelect: (group: Group) => void;
+}> = ({ user, onGroupSelect }) => {
+    const [groups, setGroups] = useState<Group[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+
+    useEffect(() => {
+        const groupsRef = db.collection('groups')
+            .where('members', 'array-contains', user.uid)
+            .orderBy('lastMessageTimestamp', 'desc');
+        
+        const unsubscribe = groupsRef.onSnapshot(snapshot => {
+            const groupsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group));
+            setGroups(groupsList);
+            setLoading(false);
+        }, err => {
+            console.error("Error fetching groups:", err);
+            setLoading(false);
+        });
+
+        return unsubscribe;
+    }, [user.uid]);
+
+    if (loading) return <p className="text-center text-sky-400 py-8">جارِ تحميل المجموعات...</p>;
+
+    return (
+        <div className="p-2 space-y-1">
+            <button onClick={() => setShowCreateGroupModal(true)} className="w-full flex items-center justify-center gap-2 p-3 my-1 rounded-lg bg-sky-800/50 hover:bg-sky-700/70 transition-colors">
+                <PlusIcon className="w-6 h-6"/>
+                <span>إنشاء مجموعة جديدة</span>
+            </button>
+            {groups.length > 0 ? (
+                groups.map(group => (
+                    <button key={group.id} onClick={() => onGroupSelect(group)} className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-sky-800/50 text-right">
+                        <img src={group.photoURL || `https://ui-avatars.com/api/?name=${group.name || ' '}&background=0369a1&color=fff&size=128`} alt={group.name} className="w-12 h-12 rounded-full object-cover"/>
+                        <div className="flex-grow overflow-hidden">
+                            <p className="font-semibold truncate">{group.name}</p>
+                            {group.lastMessage && <p className="text-sm text-sky-400 truncate">{group.lastMessage}</p>}
+                        </div>
+                    </button>
+                ))
+            ) : (
+                <p className="text-center text-sky-400 py-8">أنت لست في أي مجموعة بعد.</p>
+            )}
+            <CreateGroupModal isOpen={showCreateGroupModal} onClose={() => setShowCreateGroupModal(false)} user={user} onGroupCreated={onGroupSelect} />
+        </div>
+    );
+};
+
 
 export const ChatModal: React.FC<{
     isOpen: boolean;
@@ -228,6 +396,7 @@ export const ChatModal: React.FC<{
     currentUserProfile: UserProfile | null;
     blockedUsers: string[];
     onStartPrivateChat: (user: UserProfile) => void;
+    onStartGroupChat: (group: Group) => void;
     onBlockUser: (user: UserProfile) => void;
     onUnblockUser: (uid: string) => void;
     hasUnreadPrivateMessages: boolean;
@@ -238,7 +407,7 @@ export const ChatModal: React.FC<{
     handleDeleteMessage: (id: string) => void;
     showAlert: (message: string, type?: 'error' | 'success') => void;
     isDeveloper: boolean;
-}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage, showAlert, isDeveloper }) => {
+}> = ({ isOpen, onClose, user, currentUserProfile, blockedUsers, onStartPrivateChat, onStartGroupChat, onBlockUser, onUnblockUser, hasUnreadPrivateMessages, handleToggleAdminRole, handleToggleMute, handleToggleBan, handlePinMessage, handleDeleteMessage, showAlert, isDeveloper }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
@@ -255,7 +424,7 @@ export const ChatModal: React.FC<{
     const reactionMenuRef = useRef<HTMLDivElement>(null);
     
     const [userForAction, setUserForAction] = useState<UserProfile | null>(null);
-    const [activeTab, setActiveTab] = useState<'public' | 'private'>('public');
+    const [activeTab, setActiveTab] = useState<'public' | 'groups' | 'private'>('public');
 
     const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
     const [pinnedMessage, setPinnedMessage] = useState<any>(null);
@@ -495,13 +664,19 @@ export const ChatModal: React.FC<{
                     <div className="flex border border-sky-600 rounded-lg p-1">
                         <button 
                             onClick={() => setActiveTab('public')}
-                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'public' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'public' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
                         >
                             الدردشة العامة
                         </button>
+                        <button 
+                            onClick={() => setActiveTab('groups')}
+                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors ${activeTab === 'groups' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                        >
+                            المجموعات
+                        </button>
                          <button 
                             onClick={() => setActiveTab('private')}
-                            className={`w-1/2 py-2 rounded-md text-sm font-semibold transition-colors relative ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
+                            className={`w-1/3 py-2 rounded-md text-sm font-semibold transition-colors relative ${activeTab === 'private' ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-sky-700/50'}`}
                         >
                             المحادثات الخاصة
                              {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
@@ -630,6 +805,8 @@ export const ChatModal: React.FC<{
                         })}
                         <div ref={messagesEndRef} />
                     </div>
+                   ) : activeTab === 'groups' ? (
+                        <GroupsList user={user} onGroupSelect={onStartGroupChat} />
                    ) : (
                        <PrivateConversationsList user={user} onConversationSelect={onStartPrivateChat}/>
                    )}

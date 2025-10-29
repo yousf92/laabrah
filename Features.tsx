@@ -13,6 +13,7 @@ export const NajdaFeature: React.FC = () => {
     const [countdown, setCountdown] = useState(57);
     const [advice, setAdvice] = useState('');
     const [adviceLoading, setAdviceLoading] = useState(false);
+    const [error, setError] = useState('');
 
     // Refs for API key rotation
     const apiKeysRef = useRef<string[]>([]);
@@ -65,6 +66,7 @@ export const NajdaFeature: React.FC = () => {
         const fetchAdvice = async () => {
             setAdviceLoading(true);
             setAdvice('');
+            setError('');
 
             if (apiKeysRef.current.length === 0) {
                  apiKeysRef.current = (process.env.API_KEY || '')
@@ -75,7 +77,7 @@ export const NajdaFeature: React.FC = () => {
         
             if (apiKeysRef.current.length === 0) {
                 console.error("Gemini API key not found in process.env.API_KEY");
-                setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
+                setError('لم يتم العثور على مفتاح API. يرجى إعداده.');
                 setAdviceLoading(false);
                 return;
             }
@@ -102,20 +104,28 @@ export const NajdaFeature: React.FC = () => {
                     success = true;
                     break; 
 
-                } catch (error: any) {
-                    console.error(`Gemini API error with key index ${keyIndex}:`, error);
-                    const isQuotaError = error.toString().includes('429');
+                } catch (err: any) {
+                    console.error(`Gemini API error with key index ${keyIndex}:`, err);
+                    const isQuotaError = err.toString().includes('429');
                     if (isQuotaError) {
                         console.warn(`Key index ${keyIndex} has reached its quota. Trying next key.`);
                         continue;
                     } else {
-                        break;
+                        const detailedError = `خطأ في مفتاح [${keyIndex + 1}]: ${err.message || err.toString()}`;
+                        setError(detailedError);
+                        success = false;
+                        break; 
                     }
                 }
             }
             
             if (!success) {
-                setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
+                if (!error && !advice) {
+                   setError('فشلت جميع المحاولات. تأكد من صلاحية مفاتيح API أو أن الشبكة مستقرة.');
+                }
+                if (!error) {
+                    setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
+                }
             }
 
             setAdviceLoading(false);
@@ -128,6 +138,7 @@ export const NajdaFeature: React.FC = () => {
         setView('home');
         setAdvice('');
         setAdviceLoading(false);
+        setError('');
     };
 
     if (view === 'home') {
@@ -163,6 +174,8 @@ export const NajdaFeature: React.FC = () => {
                 <div className="max-w-md flex flex-col items-center">
                     {adviceLoading ? (
                          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
+                    ) : error ? (
+                        <ErrorMessage message={error} />
                     ) : (
                         <>
                             <p className="text-2xl font-semibold leading-relaxed text-shadow mb-2">"</p>
@@ -260,14 +273,15 @@ export const DesireSolverFeature: React.FC = () => {
                     localChat = null;
                     continue;
                 } else {
-                    setError('حدث خطأ غير متوقع، يرجى المحاولة لاحقاً.');
+                    const detailedError = `خطأ في مفتاح [${keyIndex + 1}]: ${err.message || err.toString()}`;
+                    setError(detailedError);
                     break;
                 }
             }
         }
         
         if (!success && !error) {
-            setError('فشلت جميع محاولات الاتصال، حاول مرة أخرى.');
+            setError('فشلت جميع محاولات الاتصال. تأكد من صلاحية مفاتيح API أو أن الشبكة مستقرة.');
         }
 
         setIsLoading(false);
@@ -407,14 +421,15 @@ export const FaithDoseFeature: React.FC = () => {
                     localChat = null;
                     continue;
                 } else {
-                    setError('حدث خطأ غير متوقع، يرجى المحاولة لاحقاً.');
+                    const detailedError = `خطأ في مفتاح [${keyIndex + 1}]: ${err.message || err.toString()}`;
+                    setError(detailedError);
                     break;
                 }
             }
         }
         
         if (!success && !error) {
-            setError('فشلت جميع محاولات الاتصال، حاول مرة أخرى.');
+            setError('فشلت جميع محاولات الاتصال. تأكد من صلاحية مفاتيح API أو أن الشبكة مستقرة.');
         }
 
         setIsLoading(false);

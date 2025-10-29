@@ -21,6 +21,17 @@ export interface Conversation extends Omit<UserProfile, 'uid'> {
     hasUnread?: boolean;
 }
 
+export interface Group {
+    id: string;
+    name: string;
+    photoURL: string | null;
+    members: string[];
+    createdBy: string;
+    createdAt: firebase.firestore.Timestamp;
+    lastMessage?: string;
+    lastMessageTimestamp?: firebase.firestore.Timestamp;
+}
+
 export interface Notification {
     id: string;
     title: string;
