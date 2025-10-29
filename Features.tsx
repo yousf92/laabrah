@@ -7,16 +7,16 @@ import { ErrorMessage } from './common';
 
 // --- Fallback Content ---
 const FALLBACK_NAJDA_ADVICE = [
-    { id: 'fallback', text: 'لا تستسلم، فبداية الأشياء دائماً هي الأصعب. يمكنك إضافة المزيد من النصائح في ملف content.json.' },
+    { id: 'fallback', text: 'لا تستسلم، فبداية الأشياء دائماً هي الأصعب. القوة تأتي مع الصبر.' },
 ];
 
 const FALLBACK_DESIRE_SOLUTIONS = [
-    { id: 'fallback', text: 'تذكر الهدف الذي تسعى إليه. يمكنك إضافة المزيد من الحلول في ملف content.json.' },
+    { id: 'fallback', text: 'تذكر الهدف الذي تسعى إليه، وتذكر أن كل لحظة تقاوم فيها هي انتصار.' },
     { id: 'fallback2', text: 'اشغل نفسك بعمل مفيد أو رياضة. فالنفس إن لم تشغلها بالحق شغلتك بالباطل.'}
 ];
 
 const FALLBACK_SALAF_STORIES = [
-    { id: 'fallback', text: 'قال عمر بن الخطاب رضي الله عنه: "لو نزلت صاعقة من السماء ما أصابت مستغفراً". يمكنك إضافة المزيد من القصص في ملف content.json.' },
+    { id: 'fallback', text: 'قال عمر بن الخطاب رضي الله عنه: "لو نزلت صاعقة من السماء ما أصابت مستغفراً".' },
     { id: 'fallback2', text: 'سُئل الإمام أحمد: متى يجد العبد طعم الراحة؟ فقال: عند أول قدم يضعها في الجنة.'}
 ];
 
@@ -90,7 +90,7 @@ export const NajdaFeature: React.FC<FeatureProps> = ({ user, currentUserProfile 
 
             try {
                 if (allAdviceRef.current.length === 0) {
-                    const response = await fetch('/content.json');
+                    const response = await fetch(`/content.json?v=${new Date().getTime()}`);
                     if (!response.ok) {
                         throw new Error('Network response was not ok');
                     }
@@ -201,7 +201,7 @@ export const DesireSolverFeature: React.FC<FeatureProps> = ({ user, currentUserP
     const loadSolutions = async () => {
         if (allSolutionsRef.current.length > 0) return;
         try {
-            const response = await fetch('/content.json');
+            const response = await fetch(`/content.json?v=${new Date().getTime()}`);
             if (!response.ok) {
                 throw new Error('Network response was not ok');
             }
@@ -213,6 +213,7 @@ export const DesireSolverFeature: React.FC<FeatureProps> = ({ user, currentUserP
             }
         } catch (err) {
             console.error("Error fetching solutions from content.json, using fallback:", err);
+            setError('حدث خطأ في جلب الحلول، يتم عرض محتوى افتراضي.');
             allSolutionsRef.current = FALLBACK_DESIRE_SOLUTIONS;
         }
     };
@@ -308,7 +309,7 @@ export const FaithDoseFeature: React.FC<FeatureProps> = ({ user, currentUserProf
      const loadStories = async () => {
         if (allStoriesRef.current.length > 0) return;
         try {
-            const response = await fetch('/content.json');
+            const response = await fetch(`/content.json?v=${new Date().getTime()}`);
             if (!response.ok) {
                 throw new Error('Network response was not ok');
             }
@@ -320,6 +321,7 @@ export const FaithDoseFeature: React.FC<FeatureProps> = ({ user, currentUserProf
             }
         } catch (err) {
             console.error("Error fetching stories from content.json, using fallback:", err);
+            setError('حدث خطأ في جلب القصص، يتم عرض محتوى افتراضي.');
             allStoriesRef.current = FALLBACK_SALAF_STORIES;
         }
     };
