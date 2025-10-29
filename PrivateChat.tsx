@@ -1,22 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, firebase } from './firebase';
-import { Message, UserProfile, Group } from './types';
-import { DEVELOPER_UIDS, EMOJI_REACTIONS } from './constants';
-import { XMarkIcon, SendIcon, DotsVerticalIcon, FaceSmileIcon, ReplyIcon, CopyIcon, PencilIcon, TrashIcon } from './icons';
+import { Message, UserProfile } from './types';
+import { EMOJI_REACTIONS } from './constants';
+import { XMarkIcon, SendIcon, DotsVerticalIcon, FaceSmileIcon, ReplyIcon, CopyIcon, PencilIcon, TrashIcon, UserMinusIcon, UserPlusIcon } from './icons';
 import { DeleteMessageConfirmationModal, MessageActionModal } from './ChatComponents';
 
-export const GroupChatModal: React.FC<{
+export const PrivateChatModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     user: firebase.User;
-    group: Group;
-}> = ({ isOpen, onClose, user, group }) => {
+    otherUser: UserProfile;
+    isBlocked: boolean;
+    onBlockUser: (user: UserProfile) => void;
+    onUnblockUser: (uid: string) => void;
+}> = ({ isOpen, onClose, user, otherUser, isBlocked, onBlockUser, onUnblockUser }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
-    const messagesCollection = db.collection('groups').doc(group.id).collection('messages');
+    const chatId = [user.uid, otherUser.uid].sort().join('_');
+    const messagesCollection = db.collection('private_chats').doc(chatId).collection('messages');
+    const [amIBlocked, setAmIBlocked] = useState(false);
 
     const [editingMessage, setEditingMessage] = useState<Message | null>(null);
     const [editText, setEditText] = useState('');
@@ -26,10 +31,6 @@ export const GroupChatModal: React.FC<{
     
     const [reactingToMessageId, setReactingToMessageId] = useState<string | null>(null);
     const reactionMenuRef = useRef<HTMLDivElement>(null);
-    
-    const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
-
-    const isGroupCreator = group.createdBy === user.uid;
 
     useEffect(() => {
         if (isOpen) {
@@ -50,7 +51,21 @@ export const GroupChatModal: React.FC<{
                     ...doc.data()
                 } as Message));
                 setMessages(fetchedMessages);
-            }, err => console.error("Error fetching group messages: ", err));
+            }, err => console.error("Error fetching private messages: ", err));
+            
+        const otherUserRef = db.collection('users').doc(otherUser.uid);
+        const unsubscribeAmIBlocked = otherUserRef.onSnapshot(doc => {
+            const data = doc.data();
+            const theirBlockedList = data?.blockedUsers || [];
+            setAmIBlocked(theirBlockedList.includes(user.uid));
+        }, err => {
+            console.error("Error checking if blocked:", err);
+            setAmIBlocked(false);
+        });
+
+        db.collection('users').doc(user.uid).collection('conversations').doc(otherUser.uid)
+            .set({ hasUnread: false }, { merge: true })
+            .catch(err => console.log("Failed to mark convo as read:", err.message));
             
         const handleClickOutside = (event: MouseEvent) => {
             if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
@@ -61,33 +76,10 @@ export const GroupChatModal: React.FC<{
 
         return () => {
              unsubscribe();
+             unsubscribeAmIBlocked();
              document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [isOpen, group.id]);
-    
-     useEffect(() => {
-        const uidsInMessages = [...new Set(messages.map(m => m.uid))];
-        const uidsToFetch = uidsInMessages.filter(uid => !userProfiles[uid]);
-        if (uidsToFetch.length > 0) {
-            const fetchChunks = [];
-            for (let i = 0; i < uidsToFetch.length; i += 30) {
-                fetchChunks.push(uidsToFetch.slice(i, i + 30));
-            }
-
-            Promise.all(fetchChunks.map(chunk => 
-                db.collection('users').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get()
-            )).then(snapshots => {
-                const profiles: Record<string, UserProfile> = {};
-                snapshots.forEach(snapshot => {
-                    snapshot.forEach(doc => {
-                        profiles[doc.id] = { uid: doc.id, ...doc.data() } as UserProfile;
-                    });
-                });
-                setUserProfiles(prev => ({ ...prev, ...profiles }));
-            }).catch(err => console.error("Error fetching user profiles:", err));
-        }
-    }, [messages]);
-
+    }, [isOpen, chatId, user.uid, otherUser.uid]);
 
     useEffect(() => {
         if (editingMessage) return;
@@ -102,9 +94,9 @@ export const GroupChatModal: React.FC<{
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMessage.trim()) return;
+        if (!newMessage.trim() || isBlocked || amIBlocked) return;
 
-        const { uid, photoURL } = user;
+        const { uid, photoURL, email } = user;
         const displayName = user.displayName || 'زائر';
         setLoading(true);
 
@@ -126,17 +118,32 @@ export const GroupChatModal: React.FC<{
 
         try {
             await messagesCollection.add(messageData);
-            
-            // Update group last message
-            await db.collection('groups').doc(group.id).update({
-                lastMessage: `${displayName}: ${newMessage}`,
-                lastMessageTimestamp: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
              setNewMessage('');
              setReplyTo(null);
 
-        } catch (error) { console.error("Error sending group message:", error); } 
+            const timestamp = firebase.firestore.FieldValue.serverTimestamp();
+            
+            const myProfileForOther = {
+                displayName: displayName,
+                photoURL: photoURL,
+                lastMessageTimestamp: timestamp,
+                ...(email && { email }),
+            };
+
+            const otherProfileForMe = {
+                displayName: otherUser.displayName,
+                photoURL: otherUser.photoURL,
+                lastMessageTimestamp: timestamp,
+                ...(otherUser.email && { email: otherUser.email }),
+            };
+            
+            const userConversationsRef = db.collection('users').doc(uid).collection('conversations').doc(otherUser.uid);
+            const otherUserConversationsRef = db.collection('users').doc(otherUser.uid).collection('conversations').doc(uid);
+
+            await userConversationsRef.set(otherProfileForMe, { merge: true });
+            await otherUserConversationsRef.set({ ...myProfileForOther, hasUnread: true }, { merge: true });
+
+        } catch (error) { console.error("Error sending private message:", error); } 
         finally { setLoading(false); }
     };
     
@@ -211,15 +218,24 @@ export const GroupChatModal: React.FC<{
                 <header className="flex items-center justify-between p-4 border-b border-sky-400/30 flex-shrink-0">
                     <div className="flex items-center gap-3">
                          <img 
-                            src={group.photoURL || `https://ui-avatars.com/api/?name=${group.name || ' '}&background=0369a1&color=fff&size=128`} 
-                            alt={group.name || 'avatar'} 
+                            src={otherUser.photoURL || `https://ui-avatars.com/api/?name=${otherUser.displayName || ' '}&background=0284c7&color=fff&size=128`} 
+                            alt={otherUser.displayName || 'avatar'} 
                             className="w-10 h-10 rounded-full object-cover flex-shrink-0"
                         />
                         <h2 className="text-lg font-bold text-sky-200 text-shadow truncate">
-                            {group.name}
+                            {otherUser.displayName}
                         </h2>
                     </div>
                     <div className="flex items-center gap-2">
+                         {isBlocked ? (
+                            <button onClick={() => onUnblockUser(otherUser.uid)} className="p-2 rounded-full hover:bg-white/10 text-green-400 transition-colors" title="إلغاء حظر المستخدم">
+                                <UserPlusIcon className="w-6 h-6"/>
+                            </button>
+                        ) : (
+                            <button onClick={() => onBlockUser(otherUser)} className="p-2 rounded-full hover:bg-white/10 text-red-400 transition-colors" title="حظر المستخدم">
+                                <UserMinusIcon className="w-6 h-6"/>
+                            </button>
+                        )}
                         <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
                             <XMarkIcon className="w-6 h-6"/>
                         </button>
@@ -228,8 +244,6 @@ export const GroupChatModal: React.FC<{
                 <main ref={messagesContainerRef} className="flex-grow overflow-y-auto p-4 space-y-4">
                     {messages.map(msg => {
                         const isMyMessage = msg.uid === user.uid;
-                        const profile = userProfiles[msg.uid];
-                        const isSenderAdmin = profile?.isAdmin || DEVELOPER_UIDS.includes(msg.uid);
                         return (
                              <div key={msg.id} className={`flex items-start gap-3 group ${isMyMessage ? 'flex-row-reverse' : ''}`}>
                                 <img 
@@ -268,7 +282,6 @@ export const GroupChatModal: React.FC<{
                                                     ))}
                                                 </div>
                                             )}
-                                             <p className="text-sm font-bold text-sky-200 mb-1">{isSenderAdmin && '⭐ '}{msg.displayName}</p>
                                             {msg.replyTo && (
                                                 <div className="mb-2 p-2 border-r-2 border-sky-400 bg-black/20 rounded-md">
                                                     <p className="text-xs font-bold text-sky-300">{msg.replyTo.displayName}</p>
@@ -315,30 +328,41 @@ export const GroupChatModal: React.FC<{
                     <div ref={messagesEndRef} />
                 </main>
                 <footer className="p-4 border-t border-sky-400/30 flex-shrink-0">
-                    <>
-                        {replyTo && (
-                        <div className="relative p-2 mb-2 bg-sky-800/50 rounded-lg text-sm">
-                            <p className="text-sky-300">رد على <span className="font-bold">{replyTo.displayName}</span></p>
-                            <p className="text-white/70 truncate">{replyTo.text}</p>
-                            <button onClick={() => setReplyTo(null)} className="absolute top-1 left-1 p-1 rounded-full hover:bg-white/10">
-                                <XMarkIcon className="w-4 h-4" />
-                            </button>
+                    {amIBlocked ? (
+                        <div className="text-center text-red-400 bg-red-900/50 p-3 rounded-lg">
+                            لقد قام هذا المستخدم بحظرك، لا يمكنك إرسال رسائل.
                         </div>
-                        )}
-                    <form onSubmit={handleSendMessage} className="flex items-center gap-3">
-                        <input
-                            type="text"
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            placeholder="اكتب رسالتك..."
-                            className="flex-grow bg-sky-900/50 border border-sky-400/30 rounded-full py-2 px-4 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
-                            disabled={loading}
-                        />
-                        <button type="submit" className="bg-sky-600 text-white p-3 rounded-full hover:bg-sky-500 disabled:bg-sky-800 transition-colors" disabled={loading || !newMessage.trim()}>
-                            <SendIcon className="w-6 h-6"/>
-                        </button>
-                    </form>
-                    </>
+                    ) : isBlocked ? (
+                        <div className="text-center text-red-400 bg-red-900/50 p-3 rounded-lg flex items-center justify-center gap-4">
+                            <span>لقد حظرت هذا المستخدم.</span>
+                            <button onClick={() => onUnblockUser(otherUser.uid)} className="font-bold text-green-300 hover:underline">إلغاء الحظر</button>
+                        </div>
+                    ) : (
+                        <>
+                         {replyTo && (
+                            <div className="relative p-2 mb-2 bg-sky-800/50 rounded-lg text-sm">
+                                <p className="text-sky-300">رد على <span className="font-bold">{replyTo.displayName}</span></p>
+                                <p className="text-white/70 truncate">{replyTo.text}</p>
+                                <button onClick={() => setReplyTo(null)} className="absolute top-1 left-1 p-1 rounded-full hover:bg-white/10">
+                                    <XMarkIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                         )}
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+                            <input
+                                type="text"
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                                placeholder="اكتب رسالتك..."
+                                className="flex-grow bg-sky-900/50 border border-sky-400/30 rounded-full py-2 px-4 text-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                                disabled={loading}
+                            />
+                            <button type="submit" className="bg-sky-600 text-white p-3 rounded-full hover:bg-sky-500 disabled:bg-sky-800 transition-colors" disabled={loading || !newMessage.trim()}>
+                                <SendIcon className="w-6 h-6"/>
+                            </button>
+                        </form>
+                        </>
+                    )}
                 </footer>
             </div>
              {messageToDelete && <DeleteMessageConfirmationModal onConfirm={confirmDelete} onClose={() => setMessageToDelete(null)} />}
@@ -349,11 +373,13 @@ export const GroupChatModal: React.FC<{
                     onReply={() => handleReply(messageForAction)}
                     canEdit={messageForAction.uid === user.uid}
                     onEdit={() => handleEdit(messageForAction)}
-                    canDelete={messageForAction.uid === user.uid || isGroupCreator}
+                    canDelete={messageForAction.uid === user.uid}
                     onDelete={() => {
                         setMessageToDelete(messageForAction);
                         setMessageForAction(null);
                     }}
+                    canPin={false}
+                    isPinned={false}
                 />
             )}
         </div>

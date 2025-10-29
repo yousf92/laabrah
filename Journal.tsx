@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { db, firebase } from './firebase';
 import { JournalEntry } from './types';
-import { PlusIcon, XMarkIcon, TrashIcon, PencilIcon, JournalIcon } from './icons';
+import { XMarkIcon, TrashIcon, PencilIcon, JournalIcon } from './icons';
 import { ErrorMessage } from './common';
 import { formatDistanceToNow } from './utils';
 
 const MOOD_EMOJIS = ['😊', '😢', '😠', '😌', '🤔', '🥳', '😪'];
 
 // --- Modal to Add/Edit a Journal Entry ---
-const AddJournalEntryModal: React.FC<{
+export const AddJournalEntryModal: React.FC<{
     onClose: () => void;
     user: firebase.User;
     entryToEdit?: JournalEntry | null;
@@ -102,11 +102,13 @@ const AddJournalEntryModal: React.FC<{
 
 
 // --- Main Journal View ---
-export const JournalView: React.FC<{ user: firebase.User }> = ({ user }) => {
+export const JournalView: React.FC<{ 
+    user: firebase.User;
+    setShowAddEditModal: (show: boolean) => void;
+    setEntryToEdit: (entry: JournalEntry | null) => void;
+}> = ({ user, setShowAddEditModal, setEntryToEdit }) => {
     const [entries, setEntries] = useState<JournalEntry[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showAddEditModal, setShowAddEditModal] = useState(false);
-    const [entryToEdit, setEntryToEdit] = useState<JournalEntry | null>(null);
     const [entryToView, setEntryToView] = useState<JournalEntry | null>(null);
     const [entryToDelete, setEntryToDelete] = useState<JournalEntry | null>(null);
 
@@ -137,11 +139,6 @@ export const JournalView: React.FC<{ user: firebase.User }> = ({ user }) => {
         } catch (error) {
             console.error("Error deleting entry:", error);
         }
-    };
-
-    const handleOpenAddModal = () => {
-        setEntryToEdit(null);
-        setShowAddEditModal(true);
     };
 
     const handleOpenEditModal = (entry: JournalEntry) => {
@@ -182,8 +179,6 @@ export const JournalView: React.FC<{ user: firebase.User }> = ({ user }) => {
                     </div>
                 )}
             </main>
-
-            {showAddEditModal && <AddJournalEntryModal onClose={() => setShowAddEditModal(false)} user={user} entryToEdit={entryToEdit} />}
             
             {entryToView && (
                  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -226,14 +221,6 @@ export const JournalView: React.FC<{ user: firebase.User }> = ({ user }) => {
                     </div>
                 </div>
             )}
-
-            <button 
-                onClick={handleOpenAddModal}
-                className="fixed z-40 left-6 bottom-20 w-16 h-16 rounded-full flex items-center justify-center bg-gradient-to-br from-teal-500 to-sky-600 text-white shadow-lg hover:scale-110 transition-transform duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950/50 focus:ring-teal-400"
-                aria-label="إضافة يومية جديدة"
-            >
-                <PlusIcon className="w-8 h-8"/>
-            </button>
         </div>
     );
 };

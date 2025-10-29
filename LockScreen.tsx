@@ -68,7 +68,7 @@ export const LockScreen: React.FC<{ onUnlock: () => void }> = ({ onUnlock }) => 
     return (
         <main 
             className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center"
-            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1507400492013-162706c8c05e?q=80&w=2070&auto=format&fit=crop')" }}
+            style={{ backgroundImage: "url('https://images.unsplash.com/photo-1472552944129-b035e9ea3744?q=80&w=2070&auto=format&fit=crop')" }}
         >
             <div className="w-full max-w-sm bg-sky-950/80 rounded-2xl shadow-xl p-8 space-y-6 relative backdrop-blur-xl border border-sky-300/30 text-white">
                 <div className="text-center">

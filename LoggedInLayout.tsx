@@ -1,238 +1,34 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db, firebase, auth } from './firebase';
-import { UserProfile, LoggedInView, Notification, Message, PinnedMessage, Group } from './types';
+import { UserProfile, LoggedInView, Notification, Message, PinnedMessage, Group, JournalEntry } from './types';
 import { DEVELOPER_UIDS } from './constants';
-import { calculateTimeDifference, getArabicUnitLabel } from './utils';
-import { StopwatchIcon, SettingsIcon, HouseIcon, UserIcon, ChatIcon, NotificationIcon, JournalIcon } from './icons';
-import { NajdaFeature, DesireSolverFeature, FaithDoseFeature, CommitmentDocumentFeature } from './Features';
-import { SettingsView, CounterSettingsView, ResetConfirmationModal, DeleteImageConfirmationModal, SetStartDateModal } from './Settings';
+import { SettingsView } from './Settings';
+import { CounterSettingsView, ResetConfirmationModal, DeleteImageConfirmationModal, SetStartDateModal } from './CounterSettings';
 import { NotificationsModal } from './Notifications';
-import { ChatModal, PrivateChatModal } from './Chat';
+import { ChatModal } from './Chat';
+import { PrivateChatModal } from './PrivateChat';
 import { JournalView } from './Journal';
 import { SetPinModal } from './LockScreen';
 import { GroupChatModal } from './GroupChat';
+import { HomeView } from './HomeView';
+// FIX: Export BottomNavBar to make it available for import in other files, like App.tsx.
+export { BottomNavBar } from './BottomNavBar';
 
-const CounterBar = ({ label, progress, colorClass }: { label: string; progress: number; colorClass: string }): React.ReactElement => {
-    return (
-        <div className="flex-grow h-12 bg-black/40 rounded-lg p-1 relative">
-            <div
-                className={`${colorClass} h-full rounded-md transition-none`}
-                style={{ width: `${progress}%` }}
-            ></div>
-            <div className="absolute inset-0 flex items-center justify-start pr-4">
-                <span className="text-white font-bold text-lg text-shadow">{label}</span>
-            </div>
-        </div>
-    );
-};
-
-const HomeView = ({
-    user,
+export const LoggedInLayout = ({ 
+    user, 
+    activeTab, 
     setActiveTab,
-    startDate,
-    handleStartCounter,
-    counterImage,
-    setShowNotifications,
-    setShowChat,
-    hasUnreadPrivateMessages,
-    currentUserProfile,
-}: {
-    user: firebase.User;
-    setActiveTab: (tab: LoggedInView) => void;
-    startDate: Date | null;
-    handleStartCounter: () => void;
-    counterImage: string | null;
-    setShowNotifications: (show: boolean) => void;
-    setShowChat: (show: boolean) => void;
-    hasUnreadPrivateMessages: boolean;
-    currentUserProfile: UserProfile | null;
+    setShowAddEditModal,
+    setEntryToEdit,
+    onChatStateChange
+}: { 
+    user: firebase.User, 
+    activeTab: LoggedInView, 
+    setActiveTab: (tab: LoggedInView) => void,
+    setShowAddEditModal: (show: boolean) => void,
+    setEntryToEdit: (entry: JournalEntry | null) => void,
+    onChatStateChange: (isOpen: boolean) => void;
 }): React.ReactElement => {
-    // FIX: The `useState` call with `new Date()` was causing an error. Using a lazy initializer function `() => new Date()` works around potential build environment issues with direct object instantiation inside `useState`.
-    const [now, setNow] = useState(() => new Date());
-    // FIX: Changed useRef to have an initial value of null to satisfy a strict requirement for useRef to be called with one argument. This also improves type safety for the requestAnimationFrame ID.
-    const animationFrameId = useRef<number | null>(null);
-
-    useEffect(() => {
-        let frameId: number;
-        const updateNow = () => {
-            setNow(new Date());
-            frameId = requestAnimationFrame(updateNow);
-        };
-
-        if (startDate) {
-            frameId = requestAnimationFrame(updateNow);
-            animationFrameId.current = frameId;
-        }
-
-        return () => {
-            if (animationFrameId.current) {
-                cancelAnimationFrame(animationFrameId.current);
-            }
-        };
-    }, [startDate]);
-
-    const timeDiff = startDate ? calculateTimeDifference(startDate, now) : { months: 0, days: 0, hours: 0, minutes: 0, seconds: 0 };
-    const milliseconds = now.getMilliseconds();
-    
-    const currentDate = new Date().toLocaleDateString('ar-IQ', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
-    
-    const daysInCurrentMonth = startDate ? new Date(startDate.getFullYear(), startDate.getMonth() + timeDiff.months + 1, 0).getDate() : 30;
-
-    const cardStyle = counterImage ? { backgroundImage: `url(${counterImage})` } : {};
-    const cardClasses = `w-full max-w-sm mx-auto p-4 rounded-2xl border border-white/10 relative overflow-hidden transition-all duration-500 ${
-        counterImage ? 'bg-cover bg-center' : 'bg-gradient-to-br from-teal-500/30 to-sky-600/30 backdrop-blur-sm'
-    }`;
-
-    if (!startDate) {
-        return (
-            <div className="text-white">
-                <header className="flex justify-between items-center w-full pt-4">
-                     <div>
-                        <h1 className="text-xl font-bold text-shadow">
-                            مرحباً، {user.displayName || 'زائر'}
-                        </h1>
-                        <p className="text-sm text-sky-300">{currentDate}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setShowNotifications(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
-                        <button onClick={() => setShowChat(true)} className="relative p-2 rounded-full hover:bg-white/10 transition-colors">
-                            <ChatIcon className="w-6 h-6"/>
-                            {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
-                        </button>
-                        <button onClick={() => setActiveTab('settings')} className="p-2 rounded-full hover:bg-white/10 transition-colors">
-                            <UserIcon className="w-6 h-6"/>
-                        </button>
-                    </div>
-                </header>
-                
-                <main className="pt-8">
-                    <div style={cardStyle} className={cardClasses}>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <StopwatchIcon className="w-36 h-36 text-white/10" />
-                        </div>
-                       <div className="relative z-10">
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-end pl-2">
-                                    <button onClick={() => setActiveTab('counter-settings')} className="p-2 rounded-full hover:bg-white/10">
-                                        <SettingsIcon className="w-6 h-6 text-white"/>
-                                    </button>
-                                </div>
-                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'month')}`} progress={0} colorClass="bg-orange-500" />
-                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'day')}`} progress={0} colorClass="bg-lime-500" />
-                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'hour')}`} progress={0} colorClass="bg-blue-500" />
-                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'minute')}`} progress={0} colorClass="bg-pink-500" />
-                                <CounterBar label={`0 ${getArabicUnitLabel(0, 'second')}`} progress={0} colorClass="bg-yellow-500" />
-                            </div>
-                       </div>
-                    </div>
-                </main>
-
-                <NajdaFeature user={user} currentUserProfile={currentUserProfile} />
-                <DesireSolverFeature user={user} currentUserProfile={currentUserProfile} />
-                <FaithDoseFeature user={user} currentUserProfile={currentUserProfile} />
-                <CommitmentDocumentFeature user={user} initialText={currentUserProfile?.commitmentDocument} />
-
-                <div className="mt-8 max-w-sm mx-auto">
-                    <button 
-                        onClick={handleStartCounter}
-                        className="w-full text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-xl hover:scale-105 active:scale-95 active:shadow-md focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-900/50 focus:ring-sky-400"
-                    >
-                        هل تريد بدء حساب الأيام؟
-                    </button>
-                </div>
-            </div>
-        );
-    }
-    
-    return (
-        <div className="text-white">
-            <header className="flex justify-between items-center w-full pt-4">
-                 <div>
-                    <h1 className="text-xl font-bold text-shadow">
-                        مرحباً، {user.displayName || 'زائر'}
-                    </h1>
-                    <p className="text-sm text-sky-300">{currentDate}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={() => setShowNotifications(true)} className="p-2 rounded-full hover:bg-white/10 transition-colors"><NotificationIcon className="w-6 h-6"/></button>
-                    <button onClick={() => setShowChat(true)} className="relative p-2 rounded-full hover:bg-white/10 transition-colors">
-                        <ChatIcon className="w-6 h-6"/>
-                        {hasUnreadPrivateMessages && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-sky-950/90"></span>}
-                    </button>
-                    <button onClick={() => setActiveTab('settings')} className="p-2 rounded-full hover:bg-white/10 transition-colors">
-                        <UserIcon className="w-6 h-6"/>
-                    </button>
-                </div>
-            </header>
-            
-            <main className="pt-8">
-                <div style={cardStyle} className={cardClasses}>
-                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <StopwatchIcon className="w-36 h-36 text-white/10" />
-                    </div>
-                   <div className="relative z-10">
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-end pl-2">
-                                <button onClick={() => setActiveTab('counter-settings')} className="p-2 rounded-full hover:bg-white/10">
-                                    <SettingsIcon className="w-6 h-6 text-white"/>
-                                </button>
-                            </div>
-                            <CounterBar label={`${timeDiff.months} ${getArabicUnitLabel(timeDiff.months, 'month')}`} progress={(timeDiff.days / daysInCurrentMonth) * 100} colorClass="bg-orange-500" />
-                            <CounterBar label={`${timeDiff.days} ${getArabicUnitLabel(timeDiff.days, 'day')}`} progress={(timeDiff.hours / 24) * 100} colorClass="bg-lime-500" />
-                            <CounterBar label={`${timeDiff.hours} ${getArabicUnitLabel(timeDiff.hours, 'hour')}`} progress={(timeDiff.minutes / 60) * 100} colorClass="bg-blue-500" />
-                            <CounterBar label={`${timeDiff.minutes} ${getArabicUnitLabel(timeDiff.minutes, 'minute')}`} progress={((timeDiff.seconds * 1000 + milliseconds) / 60000) * 100} colorClass="bg-pink-500" />
-                        </div>
-                   </div>
-                </div>
-            </main>
-            <NajdaFeature user={user} currentUserProfile={currentUserProfile} />
-            <DesireSolverFeature user={user} currentUserProfile={currentUserProfile} />
-            <FaithDoseFeature user={user} currentUserProfile={currentUserProfile} />
-            <CommitmentDocumentFeature user={user} initialText={currentUserProfile?.commitmentDocument} />
-        </div>
-    );
-};
-
-const BottomNavBar = ({ activeTab, setActiveTab }: { activeTab: LoggedInView; setActiveTab: (tab: LoggedInView) => void; }): React.ReactElement | null => {
-    const navItems = [
-        { id: 'home', label: 'الرئيسية', icon: HouseIcon },
-        { id: 'journal', label: 'اليوميات', icon: JournalIcon },
-        { id: 'settings', label: 'الإعدادات', icon: SettingsIcon },
-    ];
-    
-    if (activeTab === 'counter-settings') {
-        return null; // Hide nav bar on counter settings page
-    }
-
-    return (
-        <nav className="fixed bottom-0 left-0 right-0 bg-sky-950/90 border-t border-sky-300/30 backdrop-blur-lg z-20">
-            <div className="flex justify-around items-center h-16 max-w-md mx-auto">
-                {navItems.map(item => (
-                    <button 
-                        key={item.id}
-                        onClick={() => setActiveTab(item.id as LoggedInView)}
-                        className={`flex flex-col items-center justify-center space-y-1 w-full text-sm transition-colors duration-200 ${
-                            activeTab === item.id ? 'text-sky-300' : 'text-sky-500 hover:text-sky-300'
-                        }`}
-                        aria-current={activeTab === item.id ? 'page' : undefined}
-                    >
-                        <item.icon className="w-7 h-7" />
-                        <span>{item.label}</span>
-                    </button>
-                ))}
-            </div>
-        </nav>
-    );
-};
-
-// FIX: Changed component definition to not use React.FC and explicitly type props and return value. This resolves the error where the compiler incorrectly infers a 'void' return type.
-export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactElement => {
-    const [activeTab, setActiveTab] = useState<LoggedInView>('home');
     const [startDate, setStartDate] = useState<Date | null>(null);
     const [counterImage, setCounterImage] = useState<string | null>(null);
     const [showResetModal, setShowResetModal] = useState(false);
@@ -255,8 +51,43 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
 
     const isDeveloper = DEVELOPER_UIDS.includes(user.uid);
 
+    const isChatOpen = showChat || showPrivateChat || !!selectedGroup;
+
+    useEffect(() => {
+        onChatStateChange(isChatOpen);
+    }, [isChatOpen, onChatStateChange]);
+
     useEffect(() => {
         const userRef = db.collection('users').doc(user.uid);
+
+        // This function ensures a user document exists in Firestore.
+        // It's crucial for users created via Auth but missing a Firestore doc
+        // (e.g., old users, anonymous users, or signup failures).
+        const ensureUserDocument = async () => {
+            const docSnapshot = await userRef.get();
+            if (!docSnapshot.exists) {
+                try {
+                    const guestName = `زائر #${user.uid.slice(-4).toUpperCase()}`;
+                    const userData = {
+                        displayName: user.displayName || (user.isAnonymous ? guestName : 'مستخدم جديد'),
+                        email: user.email || '',
+                        photoURL: user.photoURL || null,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        isAdmin: false,
+                        isMuted: false,
+                        commitmentDocument: '',
+                    };
+                    await userRef.set(userData);
+                } catch (error) {
+                    console.error("Error creating user document on-the-fly:", error);
+                }
+            }
+        };
+
+        if (user.uid) {
+            ensureUserDocument();
+        }
+
         const unsubscribeUser = userRef.onSnapshot(doc => {
             if (doc.exists) {
                 const data = doc.data();
@@ -267,6 +98,14 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
                 }
                 setBlockedUsers(data?.blockedUsers || []);
                 setCurrentUserProfile({ uid: user.uid, ...data } as UserProfile);
+            } else {
+                // If doc doesn't exist after our check, it might be a race condition
+                // or a very new user. We'll set a default profile to avoid crashes.
+                setCurrentUserProfile({
+                    uid: user.uid,
+                    displayName: user.displayName || (user.isAnonymous ? `زائر #${user.uid.slice(-4).toUpperCase()}` : 'مستخدم جديد'),
+                    photoURL: user.photoURL,
+                } as UserProfile);
             }
         });
 
@@ -297,7 +136,7 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
             unsubscribeNotifications();
             unsubscribeConversations();
         };
-    }, [user.uid]);
+    }, [user.uid, user.displayName, user.email, user.photoURL, user.isAnonymous]);
     
     const handleStartCounter = () => {
         const now = firebase.firestore.Timestamp.now();
@@ -450,100 +289,105 @@ export const LoggedInLayout = ({ user }: { user: firebase.User }): React.ReactEl
     };
 
     return (
-        <div className="pb-16">
-            <div className="p-4">
-                {activeTab === 'home' && (
-                    <HomeView
-                        user={user}
-                        setActiveTab={setActiveTab}
-                        startDate={startDate}
-                        handleStartCounter={handleStartCounter}
-                        counterImage={counterImage}
-                        setShowNotifications={setShowNotifications}
-                        setShowChat={setShowChat}
-                        hasUnreadPrivateMessages={hasUnread}
-                        currentUserProfile={currentUserProfile}
-                    />
-                )}
-                {activeTab === 'journal' && (
-                    <JournalView user={user} />
-                )}
-                {activeTab === 'settings' && (
-                    <SettingsView
-                        user={user}
-                        handleSignOut={handleSignOut}
-                        blockedUsers={blockedUsers}
-                        handleUnblockUser={handleUnblockUser}
-                        handleAppLockToggle={handleAppLockToggle}
-                        appLockEnabled={appLockEnabled}
-                        setShowSetPinModal={setShowSetPinModal}
-                    />
-                )}
-                {activeTab === 'counter-settings' && (
-                    <CounterSettingsView
-                        setActiveTab={setActiveTab}
-                        handleResetCounter={() => setShowResetModal(true)}
-                        setShowSetDateModal={setShowSetDateModal}
-                        handleSetCounterImage={handleSetCounterImage}
-                        handleDeleteCounterImage={() => setShowDeleteImageModal(true)}
-                        hasCustomImage={!!counterImage}
-                        isDeveloper={isDeveloper}
-                    />
-                )}
-            </div>
+        <>
+            <div>
+                <div className="p-4">
+                    {activeTab === 'home' && (
+                        <HomeView
+                            user={user}
+                            setActiveTab={setActiveTab}
+                            startDate={startDate}
+                            handleStartCounter={handleStartCounter}
+                            counterImage={counterImage}
+                            setShowNotifications={setShowNotifications}
+                            setShowChat={setShowChat}
+                            hasUnreadPrivateMessages={hasUnread}
+                            currentUserProfile={currentUserProfile}
+                        />
+                    )}
+                    {activeTab === 'journal' && (
+                        <JournalView 
+                            user={user}
+                            setShowAddEditModal={setShowAddEditModal}
+                            setEntryToEdit={setEntryToEdit}
+                        />
+                    )}
+                    {activeTab === 'settings' && (
+                        <SettingsView
+                            user={user}
+                            currentUserProfile={currentUserProfile}
+                            handleSignOut={handleSignOut}
+                            blockedUsers={blockedUsers}
+                            handleUnblockUser={handleUnblockUser}
+                            handleAppLockToggle={handleAppLockToggle}
+                            appLockEnabled={appLockEnabled}
+                            setShowSetPinModal={setShowSetPinModal}
+                        />
+                    )}
+                    {activeTab === 'counter-settings' && (
+                        <CounterSettingsView
+                            setActiveTab={setActiveTab}
+                            handleResetCounter={() => setShowResetModal(true)}
+                            setShowSetDateModal={setShowSetDateModal}
+                            handleSetCounterImage={handleSetCounterImage}
+                            handleDeleteCounterImage={() => setShowDeleteImageModal(true)}
+                            hasCustomImage={!!counterImage}
+                            isDeveloper={isDeveloper}
+                        />
+                    )}
+                </div>
 
-            {/* Modals & Global components */}
-            {showResetModal && <ResetConfirmationModal onConfirm={handleResetCounter} onClose={() => setShowResetModal(false)} />}
-            {showDeleteImageModal && <DeleteImageConfirmationModal onConfirm={handleDeleteCounterImage} onClose={() => setShowDeleteImageModal(false)} />}
-            {showSetDateModal && <SetStartDateModal onSave={handleSetStartDate} onClose={() => setShowSetDateModal(false)} />}
-            <NotificationsModal isOpen={showNotifications} onClose={() => setShowNotifications(false)} notifications={notifications} isDeveloper={isDeveloper} />
-            <ChatModal 
-                isOpen={showChat} 
-                onClose={() => setShowChat(false)} 
-                user={user}
-                currentUserProfile={currentUserProfile}
-                blockedUsers={blockedUsers}
-                onStartPrivateChat={handleStartPrivateChat}
-                onStartGroupChat={handleStartGroupChat}
-                onBlockUser={handleBlockUser}
-                onUnblockUser={handleUnblockUser}
-                hasUnreadPrivateMessages={hasUnread}
-                handleToggleAdminRole={handleToggleAdminRole}
-                handleToggleMute={handleToggleMute}
-                handleToggleBan={handleToggleBan}
-                handlePinMessage={handlePinMessage}
-                handleDeleteMessage={handleDeleteMessage}
-                showAlert={showAlert}
-                isDeveloper={isDeveloper}
-            />
-            {privateChatUser && (
-                <PrivateChatModal
-                    isOpen={showPrivateChat}
-                    onClose={() => setShowPrivateChat(false)}
+                {/* Modals & Global components */}
+                {showResetModal && <ResetConfirmationModal onConfirm={handleResetCounter} onClose={() => setShowResetModal(false)} />}
+                {showDeleteImageModal && <DeleteImageConfirmationModal onConfirm={handleDeleteCounterImage} onClose={() => setShowDeleteImageModal(false)} />}
+                {showSetDateModal && <SetStartDateModal onSave={handleSetStartDate} onClose={() => setShowSetDateModal(false)} />}
+                <NotificationsModal isOpen={showNotifications} onClose={() => setShowNotifications(false)} notifications={notifications} isDeveloper={isDeveloper} />
+                <ChatModal 
+                    isOpen={showChat} 
+                    onClose={() => setShowChat(false)} 
                     user={user}
-                    otherUser={privateChatUser}
-                    isBlocked={blockedUsers.includes(privateChatUser.uid)}
+                    currentUserProfile={currentUserProfile}
+                    blockedUsers={blockedUsers}
+                    onStartPrivateChat={handleStartPrivateChat}
+                    onStartGroupChat={handleStartGroupChat}
                     onBlockUser={handleBlockUser}
                     onUnblockUser={handleUnblockUser}
+                    hasUnreadPrivateMessages={hasUnread}
+                    handleToggleAdminRole={handleToggleAdminRole}
+                    handleToggleMute={handleToggleMute}
+                    handleToggleBan={handleToggleBan}
+                    handlePinMessage={handlePinMessage}
+                    handleDeleteMessage={handleDeleteMessage}
+                    showAlert={showAlert}
+                    isDeveloper={isDeveloper}
                 />
-            )}
-            {selectedGroup && (
-                <GroupChatModal 
-                    isOpen={!!selectedGroup}
-                    onClose={() => setSelectedGroup(null)}
-                    user={user}
-                    group={selectedGroup}
-                />
-            )}
-            {showSetPinModal && <SetPinModal onPinSet={handleSetPin} onClose={() => setShowSetPinModal(false)} />}
-            
-            {alert && (
-                <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-lg text-white shadow-lg ${alert.type === 'success' ? 'bg-green-600/90' : 'bg-red-600/90'}`}>
-                    {alert.message}
-                </div>
-            )}
-            
-            <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} />
-        </div>
+                {privateChatUser && (
+                    <PrivateChatModal
+                        isOpen={showPrivateChat}
+                        onClose={() => setShowPrivateChat(false)}
+                        user={user}
+                        otherUser={privateChatUser}
+                        isBlocked={blockedUsers.includes(privateChatUser.uid)}
+                        onBlockUser={handleBlockUser}
+                        onUnblockUser={handleUnblockUser}
+                    />
+                )}
+                {selectedGroup && (
+                    <GroupChatModal 
+                        isOpen={!!selectedGroup}
+                        onClose={() => setSelectedGroup(null)}
+                        user={user}
+                        group={selectedGroup}
+                    />
+                )}
+                {showSetPinModal && <SetPinModal onPinSet={handleSetPin} onClose={() => setShowSetPinModal(false)} />}
+                
+                {alert && (
+                    <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-lg text-white shadow-lg ${alert.type === 'success' ? 'bg-green-600/90' : 'bg-red-600/90'}`}>
+                        {alert.message}
+                    </div>
+                )}
+            </div>
+        </>
     );
 };
