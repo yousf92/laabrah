@@ -4,6 +4,7 @@ import { db, firebase } from './firebase';
 import { UserProfile } from './types';
 import { FireIcon, BookOpenIcon, XMarkIcon, PencilIcon, SealIcon } from './icons';
 import { ErrorMessage } from './common';
+import allContent from './content.ts';
 
 // --- Fallback Content ---
 const FALLBACK_NAJDA_ADVICE = [
@@ -36,7 +37,6 @@ export const NajdaFeature: React.FC<FeatureProps> = ({ user, currentUserProfile 
     const [advice, setAdvice] = useState('');
     const [adviceLoading, setAdviceLoading] = useState(false);
     const [error, setError] = useState('');
-    const allAdviceRef = useRef<{ id: string; text: string; }[]>([]);
 
 
     // Effect for the 57s countdown and transitioning to advice view
@@ -79,30 +79,20 @@ export const NajdaFeature: React.FC<FeatureProps> = ({ user, currentUserProfile 
         };
     }, [view]);
 
-    // Effect for fetching the advice from content.json or using fallback
+    // Effect for getting the advice from imported content.ts
     useEffect(() => {
         if (view !== 'advice') return;
 
-        const fetchAndSetNextAdvice = async () => {
+        const setNextAdvice = () => {
             setAdviceLoading(true);
             setAdvice('');
             setError('');
 
             try {
-                if (allAdviceRef.current.length === 0) {
-                    const response = await fetch(`/content.json?v=${new Date().getTime()}`);
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    const data = await response.json();
-                    if (data.najda_advice && data.najda_advice.length > 0) {
-                        allAdviceRef.current = data.najda_advice;
-                    } else {
-                        allAdviceRef.current = FALLBACK_NAJDA_ADVICE;
-                    }
-                }
+                const advices = (allContent.najda_advice && allContent.najda_advice.length > 0)
+                    ? allContent.najda_advice
+                    : FALLBACK_NAJDA_ADVICE;
                 
-                const advices = allAdviceRef.current;
                 const currentIndex = currentUserProfile?.najdaAdviceIndex ?? -1;
                 const nextIndex = (currentIndex + 1) % advices.length;
 
@@ -115,16 +105,15 @@ export const NajdaFeature: React.FC<FeatureProps> = ({ user, currentUserProfile 
                 }
 
             } catch (err: any) {
-                console.error("Error fetching Najda advice from content.json, using fallback:", err);
+                console.error("Error processing Najda advice from content, using fallback:", err);
                 setError('حدث خطأ في جلب النصيحة، يتم عرض محتوى افتراضي.');
-                allAdviceRef.current = FALLBACK_NAJDA_ADVICE;
                 setAdvice(FALLBACK_NAJDA_ADVICE[0].text);
             } finally {
                 setAdviceLoading(false);
             }
         };
         
-        fetchAndSetNextAdvice();
+        setNextAdvice();
     }, [view, user, currentUserProfile]);
 
     const handleClose = () => {
@@ -195,50 +184,36 @@ export const DesireSolverFeature: React.FC<FeatureProps> = ({ user, currentUserP
     const [currentResponse, setCurrentResponse] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
-    const allSolutionsRef = useRef<{ id: string; text: string; }[]>([]);
     const sessionIndexRef = useRef<number>(-1);
 
-    const loadSolutions = async () => {
-        if (allSolutionsRef.current.length > 0) return;
-        try {
-            const response = await fetch(`/content.json?v=${new Date().getTime()}`);
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            const data = await response.json();
-            if (data.desire_solutions && data.desire_solutions.length > 0) {
-                allSolutionsRef.current = data.desire_solutions;
-            } else {
-                allSolutionsRef.current = FALLBACK_DESIRE_SOLUTIONS;
-            }
-        } catch (err) {
-            console.error("Error fetching solutions from content.json, using fallback:", err);
-            setError('حدث خطأ في جلب الحلول، يتم عرض محتوى افتراضي.');
-            allSolutionsRef.current = FALLBACK_DESIRE_SOLUTIONS;
-        }
-    };
-
-    const getNewSolution = async () => {
+    const getNewSolution = () => {
         setIsLoading(true);
         setError('');
 
-        await loadSolutions();
+        try {
+             const sourceData = (allContent.desire_solutions && allContent.desire_solutions.length > 0)
+                ? allContent.desire_solutions
+                : FALLBACK_DESIRE_SOLUTIONS;
 
-        const sourceData = allSolutionsRef.current;
-        if (sourceData.length > 0) {
-            const nextIndex = (sessionIndexRef.current + 1) % sourceData.length;
-            sessionIndexRef.current = nextIndex;
-            setCurrentResponse(sourceData[nextIndex].text);
+            if (sourceData.length > 0) {
+                const nextIndex = (sessionIndexRef.current + 1) % sourceData.length;
+                sessionIndexRef.current = nextIndex;
+                setCurrentResponse(sourceData[nextIndex].text);
 
-            if (user && !user.isAnonymous) {
-                db.collection('users').doc(user.uid).update({ desireSolutionsIndex: nextIndex })
-                    .catch(err => console.error("Failed to update desireSolutionsIndex", err));
+                if (user && !user.isAnonymous) {
+                    db.collection('users').doc(user.uid).update({ desireSolutionsIndex: nextIndex })
+                        .catch(err => console.error("Failed to update desireSolutionsIndex", err));
+                }
+            } else {
+                setCurrentResponse('لا توجد حلول متاحة حاليًا.');
             }
-        } else {
-            setCurrentResponse('لا توجد حلول متاحة حاليًا.');
+        } catch (err) {
+            console.error("Error processing solutions from content, using fallback:", err);
+            setError('حدث خطأ في جلب الحلول، يتم عرض محتوى افتراضي.');
+            setCurrentResponse(FALLBACK_DESIRE_SOLUTIONS[0].text);
+        } finally {
+            setIsLoading(false);
         }
-
-        setIsLoading(false);
     };
     
     const handleOpen = () => {
@@ -303,50 +278,36 @@ export const FaithDoseFeature: React.FC<FeatureProps> = ({ user, currentUserProf
     const [currentStory, setCurrentStory] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
-    const allStoriesRef = useRef<{ id: string; text: string; }[]>([]);
     const sessionIndexRef = useRef<number>(-1);
 
-     const loadStories = async () => {
-        if (allStoriesRef.current.length > 0) return;
-        try {
-            const response = await fetch(`/content.json?v=${new Date().getTime()}`);
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            const data = await response.json();
-            if (data.salaf_stories && data.salaf_stories.length > 0) {
-                allStoriesRef.current = data.salaf_stories;
-            } else {
-                allStoriesRef.current = FALLBACK_SALAF_STORIES;
-            }
-        } catch (err) {
-            console.error("Error fetching stories from content.json, using fallback:", err);
-            setError('حدث خطأ في جلب القصص، يتم عرض محتوى افتراضي.');
-            allStoriesRef.current = FALLBACK_SALAF_STORIES;
-        }
-    };
-
-    const getNewStory = async () => {
+    const getNewStory = () => {
         setIsLoading(true);
         setError('');
         
-        await loadStories();
+        try {
+            const sourceData = (allContent.salaf_stories && allContent.salaf_stories.length > 0)
+                ? allContent.salaf_stories
+                : FALLBACK_SALAF_STORIES;
 
-        const sourceData = allStoriesRef.current;
-        if (sourceData.length > 0) {
-            const nextIndex = (sessionIndexRef.current + 1) % sourceData.length;
-            sessionIndexRef.current = nextIndex;
-            setCurrentStory(sourceData[nextIndex].text);
+            if (sourceData.length > 0) {
+                const nextIndex = (sessionIndexRef.current + 1) % sourceData.length;
+                sessionIndexRef.current = nextIndex;
+                setCurrentStory(sourceData[nextIndex].text);
 
-            if (user && !user.isAnonymous) {
-                db.collection('users').doc(user.uid).update({ salafStoriesIndex: nextIndex })
-                    .catch(err => console.error("Failed to update salafStoriesIndex", err));
+                if (user && !user.isAnonymous) {
+                    db.collection('users').doc(user.uid).update({ salafStoriesIndex: nextIndex })
+                        .catch(err => console.error("Failed to update salafStoriesIndex", err));
+                }
+            } else {
+                setCurrentStory('لا توجد قصص متاحة حاليًا.');
             }
-        } else {
-            setCurrentStory('لا توجد قصص متاحة حاليًا.');
+        } catch (err) {
+            console.error("Error processing stories from content, using fallback:", err);
+            setError('حدث خطأ في جلب القصص، يتم عرض محتوى افتراضي.');
+            setCurrentStory(FALLBACK_SALAF_STORIES[0].text);
+        } finally {
+            setIsLoading(false);
         }
-
-        setIsLoading(false);
     };
     
     const handleOpen = () => {
