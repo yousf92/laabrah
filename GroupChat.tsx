@@ -84,6 +84,8 @@ export const GroupChatModal: React.FC<{
     
     const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
 
+    const isGroupCreator = group.createdBy === user.uid;
+
 
     useEffect(() => {
         if (!isOpen) return;
@@ -393,7 +395,7 @@ export const GroupChatModal: React.FC<{
                     onReply={() => handleReply(messageForAction)}
                     canEdit={messageForAction.uid === user.uid}
                     onEdit={() => handleEdit(messageForAction)}
-                    canDelete={messageForAction.uid === user.uid}
+                    canDelete={messageForAction.uid === user.uid || isGroupCreator}
                     onDelete={() => {
                         setMessageToDelete(messageForAction);
                         setMessageForAction(null);

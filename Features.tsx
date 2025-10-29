@@ -4,6 +4,22 @@ import { db, firebase } from './firebase';
 import { FireIcon, BookOpenIcon, XMarkIcon, PencilIcon, SealIcon } from './icons';
 import { ErrorMessage } from './common';
 
+// --- Fallback Content ---
+const FALLBACK_NAJDA_ADVICE = [
+    { id: 'fallback', text: 'لا تستسلم، فبداية الأشياء دائماً هي الأصعب. يمكنك إضافة المزيد من النصائح في ملف content.json.' },
+];
+
+const FALLBACK_DESIRE_SOLUTIONS = [
+    { id: 'fallback', text: 'تذكر الهدف الذي تسعى إليه. يمكنك إضافة المزيد من الحلول في ملف content.json.' },
+    { id: 'fallback2', text: 'اشغل نفسك بعمل مفيد أو رياضة. فالنفس إن لم تشغلها بالحق شغلتك بالباطل.'}
+];
+
+const FALLBACK_SALAF_STORIES = [
+    { id: 'fallback', text: 'قال عمر بن الخطاب رضي الله عنه: "لو نزلت صاعقة من السماء ما أصابت مستغفراً". يمكنك إضافة المزيد من القصص في ملف content.json.' },
+    { id: 'fallback2', text: 'سُئل الإمام أحمد: متى يجد العبد طعم الراحة؟ فقال: عند أول قدم يضعها في الجنة.'}
+];
+
+
 // --- Najda (Help) Feature ---
 export const NajdaFeature: React.FC = () => {
     type NajdaView = 'home' | 'breathing' | 'advice';
@@ -13,6 +29,8 @@ export const NajdaFeature: React.FC = () => {
     const [advice, setAdvice] = useState('');
     const [adviceLoading, setAdviceLoading] = useState(false);
     const [error, setError] = useState('');
+    const allAdviceRef = useRef<{ id: string; text: string; }[]>([]);
+
 
     // Effect for the 57s countdown and transitioning to advice view
     useEffect(() => {
@@ -54,7 +72,7 @@ export const NajdaFeature: React.FC = () => {
         };
     }, [view]);
 
-    // Effect for fetching the advice from Firestore
+    // Effect for fetching the advice from content.json or using fallback
     useEffect(() => {
         if (view !== 'advice') return;
 
@@ -64,19 +82,28 @@ export const NajdaFeature: React.FC = () => {
             setError('');
 
             try {
-                const snapshot = await db.collection('najda_advice').get();
-                if (snapshot.empty) {
-                    setAdvice('لا توجد نصائح حالياً. كن قوياً.');
-                } else {
-                    const advices = snapshot.docs.map(doc => doc.data().text as string);
-                    const randomIndex = Math.floor(Math.random() * advices.length);
-                    setAdvice(advices[randomIndex]);
+                if (allAdviceRef.current.length === 0) {
+                    const response = await fetch('/content.json');
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    const data = await response.json();
+                    if (data.najda_advice && data.najda_advice.length > 0) {
+                        allAdviceRef.current = data.najda_advice;
+                    } else {
+                        allAdviceRef.current = FALLBACK_NAJDA_ADVICE;
+                    }
                 }
+                
+                const advices = allAdviceRef.current;
+                const randomIndex = Math.floor(Math.random() * advices.length);
+                setAdvice(advices[randomIndex].text);
+
             } catch (err: any) {
-                console.error("Error fetching Najda advice from Firestore:", err);
-                setError('حدث خطأ في جلب النصيحة. يرجى المحاولة مرة أخرى.');
-                // Fallback advice
-                setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
+                console.error("Error fetching Najda advice from content.json, using fallback:", err);
+                setError('حدث خطأ في جلب النصيحة، يتم عرض محتوى افتراضي.');
+                allAdviceRef.current = FALLBACK_NAJDA_ADVICE;
+                setAdvice(FALLBACK_NAJDA_ADVICE[0].text);
             } finally {
                 setAdviceLoading(false);
             }
@@ -125,7 +152,7 @@ export const NajdaFeature: React.FC = () => {
                 <div className="max-w-md flex flex-col items-center">
                     {adviceLoading ? (
                          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
-                    ) : error && !advice ? ( // Show error only if there's no fallback advice
+                    ) : error && !advice ? ( 
                         <ErrorMessage message={error} />
                     ) : (
                         <>
@@ -156,51 +183,50 @@ export const DesireSolverFeature: React.FC = () => {
     const allSolutionsRef = useRef<{ id: string; text: string; }[]>([]);
     const shownSolutionIdsRef = useRef<Set<string>>(new Set());
 
+    const loadSolutions = async () => {
+        if (allSolutionsRef.current.length > 0) return;
+        try {
+            const response = await fetch('/content.json');
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            const data = await response.json();
+            if (data.desire_solutions && data.desire_solutions.length > 0) {
+                allSolutionsRef.current = data.desire_solutions;
+            } else {
+                allSolutionsRef.current = FALLBACK_DESIRE_SOLUTIONS;
+            }
+        } catch (err) {
+            console.error("Error fetching solutions from content.json, using fallback:", err);
+            allSolutionsRef.current = FALLBACK_DESIRE_SOLUTIONS;
+        }
+    };
+
     const getNewSolution = async () => {
         setIsLoading(true);
         setError('');
         setCurrentResponse('');
 
-        try {
-            // Fetch all solutions from Firestore only if not already fetched
-            if (allSolutionsRef.current.length === 0) {
-                const snapshot = await db.collection('desire_solutions').get();
-                if (!snapshot.empty) {
-                    allSolutionsRef.current = snapshot.docs.map(doc => ({ id: doc.id, text: doc.data().text as string }));
-                }
-            }
+        await loadSolutions();
 
-            // Find available (not yet shown) solutions
-            const availableSolutions = allSolutionsRef.current.filter(
-                solution => !shownSolutionIdsRef.current.has(solution.id)
-            );
+        const sourceData = allSolutionsRef.current;
+        let availableSolutions = sourceData.filter(solution => !shownSolutionIdsRef.current.has(solution.id));
 
-            if (availableSolutions.length === 0) {
-                // If all solutions have been shown, reset the shown set
-                shownSolutionIdsRef.current.clear();
-                const allAvailable = allSolutionsRef.current;
-                 if (allAvailable.length === 0) {
-                     setCurrentResponse('لا توجد حلول جديدة حالياً.');
-                     return;
-                 }
-                const randomIndex = Math.floor(Math.random() * allAvailable.length);
-                const newSolution = allAvailable[randomIndex];
-                setCurrentResponse(newSolution.text);
-                shownSolutionIdsRef.current.add(newSolution.id);
-
-            } else {
-                 const randomIndex = Math.floor(Math.random() * availableSolutions.length);
-                 const newSolution = availableSolutions[randomIndex];
-                 setCurrentResponse(newSolution.text);
-                 shownSolutionIdsRef.current.add(newSolution.id);
-            }
-
-        } catch (err: any) {
-            console.error("Error fetching Desire Solver solutions from Firestore:", err);
-            setError('حدث خطأ في جلب الحل. يرجى المحاولة مرة أخرى.');
-        } finally {
-            setIsLoading(false);
+        if (availableSolutions.length === 0) {
+            shownSolutionIdsRef.current.clear();
+            availableSolutions = sourceData;
         }
+
+        if (availableSolutions.length > 0) {
+            const randomIndex = Math.floor(Math.random() * availableSolutions.length);
+            const newSolution = availableSolutions[randomIndex];
+            setCurrentResponse(newSolution.text);
+            shownSolutionIdsRef.current.add(newSolution.id);
+        } else {
+            setCurrentResponse('لا توجد حلول متاحة حاليًا.');
+        }
+
+        setIsLoading(false);
     };
     
     const handleOpen = () => {
@@ -212,7 +238,7 @@ export const DesireSolverFeature: React.FC = () => {
         setIsOpen(false);
         setCurrentResponse('');
         setError('');
-        shownSolutionIdsRef.current.clear(); // Reset seen solutions on close
+        shownSolutionIdsRef.current.clear();
     };
 
     if (!isOpen) {
@@ -269,49 +295,50 @@ export const FaithDoseFeature: React.FC = () => {
     const allStoriesRef = useRef<{ id: string; text: string; }[]>([]);
     const shownStoryIdsRef = useRef<Set<string>>(new Set());
 
+     const loadStories = async () => {
+        if (allStoriesRef.current.length > 0) return;
+        try {
+            const response = await fetch('/content.json');
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            const data = await response.json();
+            if (data.salaf_stories && data.salaf_stories.length > 0) {
+                allStoriesRef.current = data.salaf_stories;
+            } else {
+                allStoriesRef.current = FALLBACK_SALAF_STORIES;
+            }
+        } catch (err) {
+            console.error("Error fetching stories from content.json, using fallback:", err);
+            allStoriesRef.current = FALLBACK_SALAF_STORIES;
+        }
+    };
+
     const getNewStory = async () => {
         setIsLoading(true);
         setError('');
         setCurrentStory('');
+        
+        await loadStories();
 
-        try {
-            // Fetch all stories from Firestore only if not already fetched
-            if (allStoriesRef.current.length === 0) {
-                const snapshot = await db.collection('salaf_stories').get();
-                if (!snapshot.empty) {
-                    allStoriesRef.current = snapshot.docs.map(doc => ({ id: doc.id, text: doc.data().text as string }));
-                }
-            }
+        const sourceData = allStoriesRef.current;
+        let availableStories = sourceData.filter(story => !shownStoryIdsRef.current.has(story.id));
 
-            const availableStories = allStoriesRef.current.filter(
-                story => !shownStoryIdsRef.current.has(story.id)
-            );
-
-            if (availableStories.length === 0) {
-                // If all stories have been shown, reset
-                shownStoryIdsRef.current.clear();
-                const allAvailable = allStoriesRef.current;
-                 if (allAvailable.length === 0) {
-                     setCurrentStory('لا توجد قصص جديدة حالياً.');
-                     return;
-                 }
-                const randomIndex = Math.floor(Math.random() * allAvailable.length);
-                const newStory = allAvailable[randomIndex];
-                setCurrentStory(newStory.text);
-                shownStoryIdsRef.current.add(newStory.id);
-            } else {
-                 const randomIndex = Math.floor(Math.random() * availableStories.length);
-                 const newStory = availableStories[randomIndex];
-                 setCurrentStory(newStory.text);
-                 shownStoryIdsRef.current.add(newStory.id);
-            }
-
-        } catch (err: any) {
-            console.error("Error fetching Salaf Stories from Firestore:", err);
-            setError('حدث خطأ في جلب القصة. يرجى المحاولة مرة أخرى.');
-        } finally {
-            setIsLoading(false);
+        if (availableStories.length === 0) {
+            shownStoryIdsRef.current.clear();
+            availableStories = sourceData;
         }
+
+        if (availableStories.length > 0) {
+            const randomIndex = Math.floor(Math.random() * availableStories.length);
+            const newStory = availableStories[randomIndex];
+            setCurrentStory(newStory.text);
+            shownStoryIdsRef.current.add(newStory.id);
+        } else {
+            setCurrentStory('لا توجد قصص متاحة حاليًا.');
+        }
+
+        setIsLoading(false);
     };
     
     const handleOpen = () => {
@@ -323,7 +350,7 @@ export const FaithDoseFeature: React.FC = () => {
         setIsOpen(false);
         setCurrentStory('');
         setError('');
-        shownStoryIdsRef.current.clear(); // Reset seen stories on close
+        shownStoryIdsRef.current.clear(); 
     };
 
     if (!isOpen) {
