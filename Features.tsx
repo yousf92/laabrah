@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Chat } from "@google/genai";
+// FIX: Imported firebase to resolve 'Cannot find namespace' error for the firebase.User type.
 import { db, firebase } from './firebase';
 import { FireIcon, BookOpenIcon, XMarkIcon, PencilIcon, SealIcon } from './icons';
 import { ErrorMessage } from './common';
@@ -14,10 +13,6 @@ export const NajdaFeature: React.FC = () => {
     const [advice, setAdvice] = useState('');
     const [adviceLoading, setAdviceLoading] = useState(false);
     const [error, setError] = useState('');
-
-    // Refs for API key rotation
-    const apiKeysRef = useRef<string[]>([]);
-    const currentKeyIndexRef = useRef(0);
 
     // Effect for the 57s countdown and transitioning to advice view
     useEffect(() => {
@@ -59,7 +54,7 @@ export const NajdaFeature: React.FC = () => {
         };
     }, [view]);
 
-    // Effect for fetching the advice from Gemini
+    // Effect for fetching the advice from Firestore
     useEffect(() => {
         if (view !== 'advice') return;
 
@@ -68,67 +63,23 @@ export const NajdaFeature: React.FC = () => {
             setAdvice('');
             setError('');
 
-            if (apiKeysRef.current.length === 0) {
-                 apiKeysRef.current = (process.env.API_KEY || '')
-                    .split(',')
-                    .map(k => k.trim())
-                    .filter(Boolean);
-            }
-        
-            if (apiKeysRef.current.length === 0) {
-                console.error("Gemini API key not found in process.env.API_KEY");
-                setError('لم يتم العثور على مفتاح API. يرجى التأكد من إعداده بشكل صحيح في متغيرات البيئة الخاصة بالمنصة.');
+            try {
+                const snapshot = await db.collection('najda_advice').get();
+                if (snapshot.empty) {
+                    setAdvice('لا توجد نصائح حالياً. كن قوياً.');
+                } else {
+                    const advices = snapshot.docs.map(doc => doc.data().text as string);
+                    const randomIndex = Math.floor(Math.random() * advices.length);
+                    setAdvice(advices[randomIndex]);
+                }
+            } catch (err: any) {
+                console.error("Error fetching Najda advice from Firestore:", err);
+                setError('حدث خطأ في جلب النصيحة. يرجى المحاولة مرة أخرى.');
+                // Fallback advice
+                setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
+            } finally {
                 setAdviceLoading(false);
-                return;
             }
-            
-            const prompt = "كلمني";
-            const systemInstruction = "بصفتك ناصح أمين على منهج السلف الصالح خاطب شخص على وشك يطيح في معصية العادة السرية أو مشاهدة الإباحية عطه كلام قوي ومباشر يجمع بين العقل والترهيب والتذكير بعواقب الفعل عشان يتراجع فورا تكلم باللهجة السعودية العامية وردك لازم يكون بدون تشكيل وبدون أي علامات ترقيم نهائيا وخليه قصير ومختصر وطبيعي كأنك تكلم خوي";
-            let success = false;
-            const totalKeys = apiKeysRef.current.length;
-
-            for (let i = 0; i < totalKeys; i++) {
-                const keyIndex = (currentKeyIndexRef.current + i) % totalKeys;
-                const apiKey = apiKeysRef.current[keyIndex];
-
-                try {
-                    const ai = new GoogleGenAI({ apiKey });
-                    const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: prompt,
-                        config: { systemInstruction }
-                    });
-
-                    setAdvice(response.text);
-                    currentKeyIndexRef.current = keyIndex;
-                    success = true;
-                    break; 
-
-                } catch (err: any) {
-                    console.error(`Gemini API error with key index ${keyIndex}:`, err);
-                    const isQuotaError = err.toString().includes('429');
-                    if (isQuotaError) {
-                        console.warn(`Key index ${keyIndex} has reached its quota. Trying next key.`);
-                        continue;
-                    } else {
-                        const detailedError = `خطأ في مفتاح [${keyIndex + 1}]: ${err.message || err.toString()}`;
-                        setError(detailedError);
-                        success = false;
-                        break; 
-                    }
-                }
-            }
-            
-            if (!success) {
-                if (!error && !advice) {
-                   setError('فشلت جميع المحاولات باستخدام المفاتيح المتاحة. قد تكون المشكلة من صلاحية المفاتيح، أو حصة الاستخدام (quota)، أو الاتصال بالشبكة.');
-                }
-                if (!error) {
-                    setAdvice('لا تستسلم، فبداية الأشياء دائماً هي الأصعب.');
-                }
-            }
-
-            setAdviceLoading(false);
         };
         
         fetchAdvice();
@@ -174,7 +125,7 @@ export const NajdaFeature: React.FC = () => {
                 <div className="max-w-md flex flex-col items-center">
                     {adviceLoading ? (
                          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-400 mx-auto"></div>
-                    ) : error ? (
+                    ) : error && !advice ? ( // Show error only if there's no fallback advice
                         <ErrorMessage message={error} />
                     ) : (
                         <>
@@ -199,104 +150,69 @@ export const NajdaFeature: React.FC = () => {
 // --- Desire Solver Feature ---
 export const DesireSolverFeature: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
-    const [chat, setChat] = useState<Chat | null>(null);
     const [currentResponse, setCurrentResponse] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
-    
-    const apiKeysRef = useRef<string[]>([]);
-    const currentKeyIndexRef = useRef(0);
+    const allSolutionsRef = useRef<{ id: string; text: string; }[]>([]);
+    const shownSolutionIdsRef = useRef<Set<string>>(new Set());
 
-    const initializeApiKeys = () => {
-        if (apiKeysRef.current.length === 0) {
-             apiKeysRef.current = (process.env.API_KEY || '')
-                .split(',')
-                .map(k => k.trim())
-                .filter(Boolean);
-        }
-    };
-
-    const getNewSolution = async (isFirstRequest = false) => {
+    const getNewSolution = async () => {
         setIsLoading(true);
         setError('');
         setCurrentResponse('');
-        initializeApiKeys();
 
-        if (apiKeysRef.current.length === 0) {
-            console.error("Gemini API key not found in process.env.API_KEY");
-            setError('لم يتم العثور على مفتاح API. يرجى التأكد من إعداده بشكل صحيح في متغيرات البيئة الخاصة بالمنصة.');
-            setIsLoading(false);
-            return;
-        }
-
-        const systemInstruction = "بصفتك ناصح أمين وفاهم على منهج السلف الصالح خاطب شخص على وشك يطيح في معصية العادة السرية أو مشاهدة الإباحية عطه كلام قوي ومباشر يجمع بين العقل والترهيب والتذكير بعواقب الفعل عشان يتراجع فورا تكلم باللهجة السعودية العامية وكأنك تسولف مع خويك في أزمة لا تكلمني كأنك آلة أو خطيب.. لا تستخدم أي تشكيل أو علامات ترقيم نهائيا لا فاصلة ولا نقطة ولا شي.. عطني كلام طويل ومفصل وخش في صلب الموضوع على طول.. الأهم من هذا كله (شرط أساسي): التنوع الكامل وعدم التكرار. كل مرة أقول لك 'أبغى حل ثاني' لازم تعطيني حل جديد ومختلف تماما عن כל الحلول اللي عطيتني إياها قبل. لا تعيد صياغة نفس الفكرة ولا تكرر أي نصيحة. إذا حسيت إنك بتكرر وقف وقول لي ما عندي شي جديد. لازم כל حل يكون فكرة مستقلة وجديدة.";
-        const initialPrompt = "اسمع يا صاحبي أنا فيني بلا وأحس إني على وشك أطيح في مشاهدة المقاطع الإباحية والرغبة قوية مرة أبغاك بصفتك ناصح أمين وفاهم على منهج السلف الصالح تعطيني حل عملي وفوري أقدر أسويه الحين عشان أطفي هذي النار";
-        const followUpPrompt = "أبغى حل ثاني";
-        
-        let localChat = chat;
-        let success = false;
-        
-        for (let i = 0; i < apiKeysRef.current.length; i++) {
-            const keyIndex = (currentKeyIndexRef.current + i) % apiKeysRef.current.length;
-            const apiKey = apiKeysRef.current[keyIndex];
-
-            try {
-                const ai = new GoogleGenAI({ apiKey });
-
-                if (!localChat) {
-                    const newChat = ai.chats.create({
-                        model: 'gemini-2.5-flash',
-                        config: { 
-                            systemInstruction,
-                            maxOutputTokens: 8192,
-                            thinkingConfig: { thinkingBudget: 1024 },
-                        },
-                    });
-                    setChat(newChat);
-                    localChat = newChat;
-                }
-
-                const prompt = isFirstRequest ? initialPrompt : followUpPrompt;
-                const response = await localChat.sendMessage({ message: prompt });
-                
-                setCurrentResponse(response.text);
-                currentKeyIndexRef.current = keyIndex;
-                success = true;
-                break;
-
-            } catch (err: any) {
-                console.error(`Gemini API error with key index ${keyIndex}:`, err);
-                const isQuotaError = err.toString().includes('429');
-                if (isQuotaError) {
-                    console.warn(`Key index ${keyIndex} has reached its quota. Trying next key.`);
-                    setChat(null); // Reset chat session if key fails
-                    localChat = null;
-                    continue;
-                } else {
-                    const detailedError = `خطأ في مفتاح [${keyIndex + 1}]: ${err.message || err.toString()}`;
-                    setError(detailedError);
-                    break;
+        try {
+            // Fetch all solutions from Firestore only if not already fetched
+            if (allSolutionsRef.current.length === 0) {
+                const snapshot = await db.collection('desire_solutions').get();
+                if (!snapshot.empty) {
+                    allSolutionsRef.current = snapshot.docs.map(doc => ({ id: doc.id, text: doc.data().text as string }));
                 }
             }
-        }
-        
-        if (!success && !error) {
-            setError('فشلت جميع المحاولات باستخدام المفاتيح المتاحة. قد تكون المشكلة من صلاحية المفاتيح، أو حصة الاستخدام (quota)، أو الاتصال بالشبكة.');
-        }
 
-        setIsLoading(false);
+            // Find available (not yet shown) solutions
+            const availableSolutions = allSolutionsRef.current.filter(
+                solution => !shownSolutionIdsRef.current.has(solution.id)
+            );
+
+            if (availableSolutions.length === 0) {
+                // If all solutions have been shown, reset the shown set
+                shownSolutionIdsRef.current.clear();
+                const allAvailable = allSolutionsRef.current;
+                 if (allAvailable.length === 0) {
+                     setCurrentResponse('لا توجد حلول جديدة حالياً.');
+                     return;
+                 }
+                const randomIndex = Math.floor(Math.random() * allAvailable.length);
+                const newSolution = allAvailable[randomIndex];
+                setCurrentResponse(newSolution.text);
+                shownSolutionIdsRef.current.add(newSolution.id);
+
+            } else {
+                 const randomIndex = Math.floor(Math.random() * availableSolutions.length);
+                 const newSolution = availableSolutions[randomIndex];
+                 setCurrentResponse(newSolution.text);
+                 shownSolutionIdsRef.current.add(newSolution.id);
+            }
+
+        } catch (err: any) {
+            console.error("Error fetching Desire Solver solutions from Firestore:", err);
+            setError('حدث خطأ في جلب الحل. يرجى المحاولة مرة أخرى.');
+        } finally {
+            setIsLoading(false);
+        }
     };
     
     const handleOpen = () => {
         setIsOpen(true);
-        getNewSolution(true);
+        getNewSolution();
     };
 
     const handleClose = () => {
         setIsOpen(false);
-        setChat(null);
         setCurrentResponse('');
         setError('');
+        shownSolutionIdsRef.current.clear(); // Reset seen solutions on close
     };
 
     if (!isOpen) {
@@ -327,7 +243,7 @@ export const DesireSolverFeature: React.FC = () => {
             <div className="w-full max-w-sm flex flex-col gap-4 pb-10 flex-shrink-0">
                  {!isLoading && (
                     <button
-                        onClick={() => getNewSolution(false)}
+                        onClick={getNewSolution}
                         className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500"
                     >
                         أبغى حل ثاني
@@ -347,104 +263,67 @@ export const DesireSolverFeature: React.FC = () => {
 // --- Faith Dose Feature ---
 export const FaithDoseFeature: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
-    const [chat, setChat] = useState<Chat | null>(null);
     const [currentStory, setCurrentStory] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
-    
-    const apiKeysRef = useRef<string[]>([]);
-    const currentKeyIndexRef = useRef(0);
+    const allStoriesRef = useRef<{ id: string; text: string; }[]>([]);
+    const shownStoryIdsRef = useRef<Set<string>>(new Set());
 
-    const initializeApiKeys = () => {
-        if (apiKeysRef.current.length === 0) {
-             apiKeysRef.current = (process.env.API_KEY || '')
-                .split(',')
-                .map(k => k.trim())
-                .filter(Boolean);
-        }
-    };
-
-    const getNewStory = async (isFirstRequest = false) => {
+    const getNewStory = async () => {
         setIsLoading(true);
         setError('');
         setCurrentStory('');
-        initializeApiKeys();
 
-        if (apiKeysRef.current.length === 0) {
-            console.error("Gemini API key not found in process.env.API_KEY");
-            setError('لم يتم العثور على مفتاح API. يرجى التأكد من إعداده بشكل صحيح في متغيرات البيئة الخاصة بالمنصة.');
-            setIsLoading(false);
-            return;
-        }
-
-        const systemInstruction = "بصفتك ناصح امين وفاهم على منهج السلف الصالح اسمع يا صاحبي أبغاك تسولف لي سالفة عن واحد من الصالحين وكيف كان خوفه من الله وتقواه وكيف كان يجاهد نفسه عشان يترك المعاصي وكيف لقى لذة الإيمان الحقيقية واربط لي هالكلام بموضوع التعافي من الإدمان وكيف إن لذة الطاعة أحلى وأبقى من لذة المعصية الزايلة. الشخصيات: لا تجيب لي سيرة الخلفاء الراشدين الأربعة (أبو بكر وعمر وعثمان وعلي) لأني أعرف قصصهم. أبغاك تجيب لي قصص عشوائية وجديدة كل مرة من حياة التابعين وتابعي التابعين والعلماء والصالحين والعباد والزهاد من כל العصور. يعني كل مرة أطلب منك عطني قصة لشخصية مختلفة تماما ولا تكرر لي نفس الشخصية أبدا. المنهج: لا تطلع عن منهج السلف الصالح في طريقة سردك للقصص والمعلومات.. اللهجة: تكلم باللهجة السعودية العامية وخلك طبيعي كأنك تسولف مع خويك في استراحة.. التنسيق: لا تستخدم أي علامات ترقيم (لا فاصلة ولا نقطة) ولا أي تشكيل (فتحة ضمة كسرة) نهائيا.. الطول: عطني كلام طويل ومفصل وسولف من قلبك. ركز معي زين: كل قصة لازم تبدأ بذكر اسم صاحبها بوضوح. مثلا تقول 'بأسولف لك عن فلان...' وبعدها تبدأ القصة من أولها مو من نصها. هذا شرط أساسي ومهم جدا. أكرر مرة ثانية: بداية ردك لازم تكون بالصيغة هذي 'اسمع سالفة فلان بن فلان' وبعدها تبدأ القصة مباشرة بدون أي مقدمات ثانية.";
-        const initialPrompt = "عطني اول قصة";
-        const followUpPrompt = "أبغى قصة ثانية";
-        
-        let localChat = chat;
-        let success = false;
-        
-        for (let i = 0; i < apiKeysRef.current.length; i++) {
-            const keyIndex = (currentKeyIndexRef.current + i) % apiKeysRef.current.length;
-            const apiKey = apiKeysRef.current[keyIndex];
-
-            try {
-                const ai = new GoogleGenAI({ apiKey });
-
-                if (!localChat) {
-                    const newChat = ai.chats.create({
-                        model: 'gemini-2.5-flash',
-                        config: { 
-                            systemInstruction,
-                            maxOutputTokens: 8192,
-                            thinkingConfig: { thinkingBudget: 1024 },
-                        },
-                    });
-                    setChat(newChat);
-                    localChat = newChat;
-                }
-
-                const prompt = isFirstRequest ? initialPrompt : followUpPrompt;
-                const response = await localChat.sendMessage({ message: prompt });
-                
-                setCurrentStory(response.text);
-                currentKeyIndexRef.current = keyIndex;
-                success = true;
-                break;
-
-            } catch (err: any) {
-                console.error(`Gemini API error with key index ${keyIndex}:`, err);
-                const isQuotaError = err.toString().includes('429');
-                if (isQuotaError) {
-                    console.warn(`Key index ${keyIndex} has reached its quota. Trying next key.`);
-                    setChat(null); 
-                    localChat = null;
-                    continue;
-                } else {
-                    const detailedError = `خطأ في مفتاح [${keyIndex + 1}]: ${err.message || err.toString()}`;
-                    setError(detailedError);
-                    break;
+        try {
+            // Fetch all stories from Firestore only if not already fetched
+            if (allStoriesRef.current.length === 0) {
+                const snapshot = await db.collection('salaf_stories').get();
+                if (!snapshot.empty) {
+                    allStoriesRef.current = snapshot.docs.map(doc => ({ id: doc.id, text: doc.data().text as string }));
                 }
             }
-        }
-        
-        if (!success && !error) {
-            setError('فشلت جميع المحاولات باستخدام المفاتيح المتاحة. قد تكون المشكلة من صلاحية المفاتيح، أو حصة الاستخدام (quota)، أو الاتصال بالشبكة.');
-        }
 
-        setIsLoading(false);
+            const availableStories = allStoriesRef.current.filter(
+                story => !shownStoryIdsRef.current.has(story.id)
+            );
+
+            if (availableStories.length === 0) {
+                // If all stories have been shown, reset
+                shownStoryIdsRef.current.clear();
+                const allAvailable = allStoriesRef.current;
+                 if (allAvailable.length === 0) {
+                     setCurrentStory('لا توجد قصص جديدة حالياً.');
+                     return;
+                 }
+                const randomIndex = Math.floor(Math.random() * allAvailable.length);
+                const newStory = allAvailable[randomIndex];
+                setCurrentStory(newStory.text);
+                shownStoryIdsRef.current.add(newStory.id);
+            } else {
+                 const randomIndex = Math.floor(Math.random() * availableStories.length);
+                 const newStory = availableStories[randomIndex];
+                 setCurrentStory(newStory.text);
+                 shownStoryIdsRef.current.add(newStory.id);
+            }
+
+        } catch (err: any) {
+            console.error("Error fetching Salaf Stories from Firestore:", err);
+            setError('حدث خطأ في جلب القصة. يرجى المحاولة مرة أخرى.');
+        } finally {
+            setIsLoading(false);
+        }
     };
     
     const handleOpen = () => {
         setIsOpen(true);
-        getNewStory(true);
+        getNewStory();
     };
 
     const handleClose = () => {
         setIsOpen(false);
-        setChat(null);
         setCurrentStory('');
         setError('');
+        shownStoryIdsRef.current.clear(); // Reset seen stories on close
     };
 
     if (!isOpen) {
@@ -476,7 +355,7 @@ export const FaithDoseFeature: React.FC = () => {
             <div className="w-full max-w-sm flex flex-col gap-4 pb-10 flex-shrink-0">
                  {!isLoading && (
                     <button
-                        onClick={() => getNewStory(false)}
+                        onClick={getNewStory}
                         className="w-full px-8 py-3 font-semibold rounded-lg transition-all duration-300 ease-in-out shadow-lg border border-white/20 focus:outline-none bg-gradient-to-br from-sky-500 to-sky-700 hover:from-sky-400 hover:to-sky-600 hover:shadow-lg hover:scale-105 active:scale-95 active:shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-offset-sky-950 focus:ring-sky-500"
                     >
                         أبغى قصة ثانية
